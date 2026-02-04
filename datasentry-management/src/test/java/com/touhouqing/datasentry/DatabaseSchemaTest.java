@@ -51,27 +51,13 @@ public class DatabaseSchemaTest {
 	/**
 	 * 核心表列表 - 验证这些关键表是否存在
 	 */
-	private static final Set<String> REQUIRED_TABLES = new HashSet<>(Arrays.asList(
-			"datasentry_agent",
-			"datasentry_business_knowledge",
-			"datasentry_semantic_model",
-			"datasentry_agent_knowledge",
-			"datasentry_datasource",
-			"datasentry_logical_relation",
-			"datasentry_agent_datasource",
-			"datasentry_agent_preset_question",
-			"datasentry_chat_session",
-			"datasentry_chat_message",
-			"datasentry_user_prompt_config",
-			"datasentry_agent_datasource_tables",
-			"datasentry_model_config",
-			"datasentry_cleaning_policy",
-			"datasentry_cleaning_rule",
-			"datasentry_cleaning_policy_rule",
-			"datasentry_cleaning_binding",
-			"datasentry_cleaning_allowlist",
-			"datasentry_cleaning_record"
-	));
+	private static final Set<String> REQUIRED_TABLES = new HashSet<>(Arrays.asList("datasentry_agent",
+			"datasentry_business_knowledge", "datasentry_semantic_model", "datasentry_agent_knowledge",
+			"datasentry_datasource", "datasentry_logical_relation", "datasentry_agent_datasource",
+			"datasentry_agent_preset_question", "datasentry_chat_session", "datasentry_chat_message",
+			"datasentry_user_prompt_config", "datasentry_agent_datasource_tables", "datasentry_model_config",
+			"datasentry_cleaning_policy", "datasentry_cleaning_rule", "datasentry_cleaning_policy_rule",
+			"datasentry_cleaning_binding", "datasentry_cleaning_allowlist", "datasentry_cleaning_record"));
 
 	@Test
 	public void testDatabaseSchema() {
@@ -98,8 +84,7 @@ public class DatabaseSchemaTest {
 			Set<String> missingTables = new HashSet<>(REQUIRED_TABLES);
 			missingTables.removeAll(actualTables);
 
-			Assertions.assertTrue(missingTables.isEmpty(),
-					"Missing required tables: " + missingTables);
+			Assertions.assertTrue(missingTables.isEmpty(), "Missing required tables: " + missingTables);
 
 			// 确保至少有所有必需的表
 			Assertions.assertTrue(actualTables.size() >= REQUIRED_TABLES.size(),
