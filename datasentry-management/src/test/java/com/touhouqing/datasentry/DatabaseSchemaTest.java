@@ -15,16 +15,11 @@
  */
 package com.touhouqing.datasentry;
 
-import com.touhouqing.datasentry.service.MySqlContainerConfiguration;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.context.ImportTestcontainers;
-import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -42,15 +37,18 @@ import java.util.Set;
  * @author vlsmb
  * @since 2025/9/26
  */
-@SpringBootTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@TestPropertySource(properties = {"spring.sql.init.mode=never"})
-@ImportTestcontainers(com.touhouqing.datasentry.service.MySqlContainerConfiguration.class)
-@ImportAutoConfiguration(com.touhouqing.datasentry.service.MySqlContainerConfiguration.class)
+@Testcontainers
 public class DatabaseSchemaTest {
 
-	@Autowired
-	private MySQLContainer<?> container;
+	private static final String DATABASE_NAME = "datasentry";
+
+	private static final String USER_PWD = "test";
+
+	@Container
+	private static final MySQLContainer<?> container = new MySQLContainer<>("mysql:8.0").withDatabaseName(DATABASE_NAME)
+		.withUsername(USER_PWD)
+		.withPassword(USER_PWD)
+		.withInitScript("sql/schema.sql");
 
 	/**
 	 * 核心表列表 - 验证这些关键表是否存在
@@ -66,17 +64,14 @@ public class DatabaseSchemaTest {
 	@Test
 	public void testDatabaseSchema() {
 		Assertions.assertNotNull(container);
+		Assertions.assertTrue(container.isRunning());
 
 		// 验证所有必需的表都已创建
 		Connection conn = null;
 		try {
-			conn = DriverManager.getConnection(
-					com.touhouqing.datasentry.service.MySqlContainerConfiguration.getJdbcUrl(),
-					com.touhouqing.datasentry.service.MySqlContainerConfiguration.USER_PWD,
-					com.touhouqing.datasentry.service.MySqlContainerConfiguration.USER_PWD);
+			conn = DriverManager.getConnection(container.getJdbcUrl(), USER_PWD, USER_PWD);
 			DatabaseMetaData metaData = conn.getMetaData();
-			ResultSet tables = metaData.getTables(MySqlContainerConfiguration.DATABASE_NAME, null, "%",
-					new String[] { "TABLE" });
+			ResultSet tables = metaData.getTables(DATABASE_NAME, null, "%", new String[] { "TABLE" });
 
 			Set<String> actualTables = new HashSet<>();
 			while (tables.next()) {
