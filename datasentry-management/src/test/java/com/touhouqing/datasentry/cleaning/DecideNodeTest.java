@@ -17,7 +17,9 @@ public class DecideNodeTest {
 	@Test
 	public void allowWhenNoFindings() {
 		DecideNode node = new DecideNode();
-		CleaningContext context = CleaningContext.builder().findings(List.of()).build();
+		CleaningContext context = CleaningContext.builder()
+			.findings(List.of())
+			.build();
 
 		node.process(context);
 
@@ -27,7 +29,10 @@ public class DecideNodeTest {
 	@Test
 	public void blockWhenSeverityExceedsThreshold() {
 		DecideNode node = new DecideNode();
-		CleaningPolicyConfig config = CleaningPolicyConfig.builder().blockThreshold(0.7).reviewThreshold(0.4).build();
+		CleaningPolicyConfig config = CleaningPolicyConfig.builder()
+			.blockThreshold(0.7)
+			.reviewThreshold(0.4)
+			.build();
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder().config(config).build();
 		CleaningContext context = CleaningContext.builder()
 			.policySnapshot(snapshot)
@@ -42,7 +47,10 @@ public class DecideNodeTest {
 	@Test
 	public void reviewWhenSeverityInReviewRange() {
 		DecideNode node = new DecideNode();
-		CleaningPolicyConfig config = CleaningPolicyConfig.builder().blockThreshold(0.7).reviewThreshold(0.4).build();
+		CleaningPolicyConfig config = CleaningPolicyConfig.builder()
+			.blockThreshold(0.7)
+			.reviewThreshold(0.4)
+			.build();
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder().config(config).build();
 		CleaningContext context = CleaningContext.builder()
 			.policySnapshot(snapshot)

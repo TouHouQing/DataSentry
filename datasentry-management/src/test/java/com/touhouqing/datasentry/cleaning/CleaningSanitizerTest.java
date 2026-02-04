@@ -16,8 +16,8 @@ public class CleaningSanitizerTest {
 		int phoneStart = text.indexOf("13800138000");
 		int emailStart = text.indexOf("test@example.com");
 		List<Finding> findings = List.of(
-				Finding.builder().start(emailStart).end(emailStart + "test@example.com".length()).build(),
-				Finding.builder().start(phoneStart).end(phoneStart + 11).build());
+			Finding.builder().start(emailStart).end(emailStart + "test@example.com".length()).build(),
+			Finding.builder().start(phoneStart).end(phoneStart + 11).build());
 
 		String sanitized = CleaningSanitizer.sanitize(text, findings);
 

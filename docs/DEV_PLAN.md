@@ -18,7 +18,7 @@
 
 ## Action items
 ### P0 (Core & API)
-[ ] **冻结架构与需求**：完善 `docs/DATA_CLEANING_ARCHITECTURE.md`，对外发布执行版架构。  
+[x] **冻结架构与需求**：完善 `docs/DATA_CLEANING_ARCHITECTURE.md`，对外发布执行版架构。  
 [x] **MetaDB 设计与迁移**：落地 `datasentry_cleaning_*` 表，含 `policy_version_snapshot`、`metrics_json`、`execution_time_ms`、`detector_source`、`dlq`。  
 [ ] **策略版本化**：JobRun 绑定 policy snapshot，运行中只读不可变。  
 [x] **Pipeline Runtime**：实现 Ingest/Normalize/Detect/Decide/Act/Audit，内置 L1/L2/L3 级联检测与 allowlist 优先级。  
@@ -26,7 +26,7 @@
 [x] **API & 权限**：新增实时清理 API（check/sanitize），权限分权与审计最小闭环。  
 [x] **本地调试工具**：提供轻量 CLI/Local Main，快速验证正则与 JSONPath。  
 [x] **全局特性开关**：新增 `datasentry.cleaning.enabled`，Controller/Pipeline 入口第一行校验，支持紧急关闭。  
-[ ] **CI 回归保护**：把清理模块基础单测接入 CI，保证不破坏原有 NL2SQL 编译与测试。  
+[x] **CI 回归保护**：把清理模块基础单测接入 CI，保证不破坏原有 NL2SQL 编译与测试。  
 
 ### P1 (Batch & Safety)
 [ ] **DB 批处理运行时**：连接/分页/分片，租约领取与断点续跑。  
