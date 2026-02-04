@@ -1,8 +1,5 @@
 package com.touhouqing.datasentry.cleaning.model;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,10 +12,8 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("datasentry_cleaning_rule")
 public class CleaningRule {
 
-	@TableId(type = IdType.AUTO)
 	private Long id;
 
 	private String name;

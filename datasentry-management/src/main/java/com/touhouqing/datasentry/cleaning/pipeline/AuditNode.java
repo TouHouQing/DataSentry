@@ -26,25 +26,14 @@ public class AuditNode implements PipelineNode {
 
 	@Override
 	public NodeResult process(CleaningContext context) {
-		Object skip = context.getMetadata().get("skipAudit");
-		if (skip instanceof Boolean && (Boolean) skip) {
-			return NodeResult.skipped();
-		}
 		try {
 			CleaningRecord record = CleaningRecord.builder()
 				.agentId(context.getAgentId())
 				.traceId(context.getTraceId())
-				.jobRunId(context.getJobRunId())
-				.datasourceId(context.getDatasourceId())
-				.tableName(context.getTableName())
-				.pkJson(context.getPkJson())
-				.columnName(context.getColumnName())
-				.actionTaken(context.getActionTaken())
 				.policySnapshotJson(toJsonSafe(context.getPolicySnapshot()))
 				.verdict(context.getVerdict() != null ? context.getVerdict().name() : null)
 				.categoriesJson(toJsonSafe(resolveCategories(context.getFindings())))
 				.sanitizedPreview(context.getSanitizedText())
-				.evidenceJson(context.getEvidenceJson())
 				.metricsJson(toJsonSafe(context.getMetrics()))
 				.executionTimeMs(resolveExecutionTime(context))
 				.detectorSource(resolveDetectorSource(context.getFindings()))

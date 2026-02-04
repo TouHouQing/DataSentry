@@ -5,14 +5,22 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningResponse;
 import com.touhouqing.datasentry.cleaning.enums.CleaningBindingType;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningAllowlistMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBindingMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRuleMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningAllowlist;
 import com.touhouqing.datasentry.cleaning.model.CleaningBinding;
 import com.touhouqing.datasentry.cleaning.model.CleaningContext;
+import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
+import com.touhouqing.datasentry.cleaning.model.CleaningPolicyConfig;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
+import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.pipeline.CleaningPipeline;
 import com.touhouqing.datasentry.exception.InvalidInputException;
+import com.touhouqing.datasentry.util.JsonUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
@@ -20,11 +28,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CleaningServiceImpl implements CleaningService {
 
-	private final CleaningPolicyResolver policyResolver;
+	private final CleaningPolicyMapper policyMapper;
+
+	private final CleaningRuleMapper ruleMapper;
 
 	private final CleaningBindingMapper bindingMapper;
 
@@ -72,7 +83,22 @@ public class CleaningServiceImpl implements CleaningService {
 			CleaningBinding binding = resolveBinding(agentId, request.getScene());
 			policyId = binding.getPolicyId();
 		}
-		return policyResolver.resolveSnapshot(policyId);
+		CleaningPolicy policy = policyMapper.findById(policyId);
+		if (policy == null || policy.getEnabled() == null || policy.getEnabled() != 1) {
+			throw new InvalidInputException("清理策略不可用");
+		}
+		List<CleaningRule> rules = ruleMapper.findByPolicyId(policyId);
+		if (rules == null) {
+			rules = List.of();
+		}
+		CleaningPolicyConfig config = parsePolicyConfig(policy.getConfigJson());
+		return CleaningPolicySnapshot.builder()
+			.policyId(policy.getId())
+			.policyName(policy.getName())
+			.defaultAction(policy.getDefaultAction())
+			.config(config)
+			.rules(rules)
+			.build();
 	}
 
 	private CleaningBinding resolveBinding(Long agentId, String scene) {
@@ -87,6 +113,20 @@ public class CleaningServiceImpl implements CleaningService {
 			throw new InvalidInputException("未找到可用的清理绑定");
 		}
 		return binding;
+	}
+
+	private CleaningPolicyConfig parsePolicyConfig(String configJson) {
+		if (configJson == null || configJson.isBlank()) {
+			return new CleaningPolicyConfig();
+		}
+		try {
+			CleaningPolicyConfig config = JsonUtil.getObjectMapper().readValue(configJson, CleaningPolicyConfig.class);
+			return config != null ? config : new CleaningPolicyConfig();
+		}
+		catch (JsonProcessingException e) {
+			log.warn("Failed to parse cleaning policy config", e);
+			return new CleaningPolicyConfig();
+		}
 	}
 
 	private List<String> resolveCategories(List<Finding> findings) {

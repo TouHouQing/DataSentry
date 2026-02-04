@@ -1,29 +1,34 @@
 package com.touhouqing.datasentry.cleaning.mapper;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningBinding;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 @Mapper
-public interface CleaningBindingMapper extends BaseMapper<CleaningBinding> {
+public interface CleaningBindingMapper {
 
-	default CleaningBinding findByAgentAndScene(Long agentId, String bindingType, String scene) {
-		return selectOne(new LambdaQueryWrapper<CleaningBinding>().eq(CleaningBinding::getAgentId, agentId)
-			.eq(CleaningBinding::getBindingType, bindingType)
-			.eq(CleaningBinding::getEnabled, 1)
-			.eq(CleaningBinding::getScene, scene)
-			.orderByDesc(CleaningBinding::getId)
-			.last("LIMIT 1"));
-	}
+	@Select("""
+			SELECT * FROM datasentry_cleaning_binding
+			WHERE agent_id = #{agentId}
+			AND binding_type = #{bindingType}
+			AND enabled = 1
+			AND scene = #{scene}
+			ORDER BY id DESC
+			LIMIT 1
+			""")
+	CleaningBinding findByAgentAndScene(@Param("agentId") Long agentId, @Param("bindingType") String bindingType,
+			@Param("scene") String scene);
 
-	default CleaningBinding findDefaultByAgent(Long agentId, String bindingType) {
-		return selectOne(new LambdaQueryWrapper<CleaningBinding>().eq(CleaningBinding::getAgentId, agentId)
-			.eq(CleaningBinding::getBindingType, bindingType)
-			.eq(CleaningBinding::getEnabled, 1)
-			.isNull(CleaningBinding::getScene)
-			.orderByDesc(CleaningBinding::getId)
-			.last("LIMIT 1"));
-	}
+	@Select("""
+			SELECT * FROM datasentry_cleaning_binding
+			WHERE agent_id = #{agentId}
+			AND binding_type = #{bindingType}
+			AND enabled = 1
+			AND scene IS NULL
+			ORDER BY id DESC
+			LIMIT 1
+			""")
+	CleaningBinding findDefaultByAgent(@Param("agentId") Long agentId, @Param("bindingType") String bindingType);
 
 }

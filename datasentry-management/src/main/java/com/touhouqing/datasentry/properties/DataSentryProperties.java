@@ -103,67 +103,6 @@ public class DataSentryProperties {
 		 */
 		private boolean enabled = true;
 
-		private Batch batch = new Batch();
-
-		private Backup backup = new Backup();
-
-		@Getter
-		@Setter
-		public static class Batch {
-
-			/**
-			 * 批处理开关
-			 */
-			private boolean enabled = true;
-
-			/**
-			 * 轮询间隔（毫秒）
-			 */
-			private long pollIntervalMs = 5000;
-
-			/**
-			 * 租约时长（秒）
-			 */
-			private int leaseSeconds = 60;
-
-			/**
-			 * 是否允许 where_sql
-			 */
-			private boolean allowWhereSql = false;
-
-			/**
-			 * 默认批量大小
-			 */
-			private int defaultBatchSize = 200;
-
-		}
-
-		@Getter
-		@Setter
-		public static class Backup {
-
-			/**
-			 * 备份存储位置：METADB / BUSINESS_DB
-			 */
-			private String storage = "METADB";
-
-			/**
-			 * 是否加密备份
-			 */
-			private boolean encrypt = true;
-
-			/**
-			 * 主密钥环境变量名
-			 */
-			private String masterKeyEnv = "DATASENTRY_BACKUP_MASTER_KEY";
-
-			/**
-			 * 加密提供方标识
-			 */
-			private String provider = "LOCAL_AES_GCM";
-
-		}
-
 	}
 
 	@Getter
