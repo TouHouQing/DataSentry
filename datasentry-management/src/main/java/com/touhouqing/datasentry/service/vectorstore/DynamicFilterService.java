@@ -197,8 +197,7 @@ public class DynamicFilterService {
 		return escaped;
 	}
 
-	public static Filter.Expression buildFilterExpressionForSearchTables(Long datasourceId,
-			List<String> tableNames) {
+	public static Filter.Expression buildFilterExpressionForSearchTables(Long datasourceId, List<String> tableNames) {
 		FilterExpressionBuilder b = new FilterExpressionBuilder();
 		List<Filter.Expression> conditions = new ArrayList<>();
 
@@ -219,8 +218,7 @@ public class DynamicFilterService {
 		return combineWithAnd(conditions);
 	}
 
-	public Filter.Expression buildFilterExpressionForSearchColumns(Long datasourceId,
-			List<String> upstreamTableNames) {
+	public Filter.Expression buildFilterExpressionForSearchColumns(Long datasourceId, List<String> upstreamTableNames) {
 		if (upstreamTableNames == null || upstreamTableNames.isEmpty()) {
 			log.warn("Upstream table names list is empty. Returning empty filter signal.");
 			return null;

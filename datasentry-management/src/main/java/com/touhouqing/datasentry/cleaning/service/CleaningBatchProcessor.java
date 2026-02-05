@@ -217,8 +217,8 @@ public class CleaningBatchProcessor {
 				boolean softDeleteCandidate = writebackEnabled && writebackMode == CleaningWritebackMode.SOFT_DELETE
 						&& result.getVerdict() != null && (result.getVerdict().name().equals("BLOCK")
 								|| result.getVerdict().name().equals("REDACTED"));
-				boolean reviewRequired = isReviewRequired(reviewPolicy, result.getVerdict() != null
-						? result.getVerdict().name() : null);
+				boolean reviewRequired = isReviewRequired(reviewPolicy,
+						result.getVerdict() != null ? result.getVerdict().name() : null);
 				if (reviewRequired && (updateCandidate || softDeleteCandidate)) {
 					reviewPendingColumns.add(column);
 					if (softDeleteCandidate) {
