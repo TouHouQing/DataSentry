@@ -27,7 +27,7 @@ public class CleaningRecord {
 
 	private Long jobRunId;
 
-	private Integer datasourceId;
+	private Long datasourceId;
 
 	private String tableName;
 

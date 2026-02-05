@@ -21,7 +21,7 @@ public class CleaningJobCreateRequest {
 	private Long agentId;
 
 	@NotNull
-	private Integer datasourceId;
+	private Long datasourceId;
 
 	@NotBlank
 	private String tableName;

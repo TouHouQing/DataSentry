@@ -21,9 +21,8 @@ public class CleaningReviewController {
 	private final CleaningReviewService reviewService;
 
 	@GetMapping("/reviews")
-	public ResponseEntity<ApiResponse<List<CleaningReviewTask>>> listReviews(
-			@RequestParam(required = false) String status, @RequestParam(required = false) Long jobRunId,
-			@RequestParam(required = false) Long agentId) {
+	public ResponseEntity<ApiResponse<List<CleaningReviewTask>>> listReviews(@RequestParam(required = false) String status,
+			@RequestParam(required = false) Long jobRunId, @RequestParam(required = false) Long agentId) {
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.listReviews(status, jobRunId, agentId)));
 	}
 

@@ -153,9 +153,7 @@ public class CleaningPolicyService {
 		}
 		List<CleaningPolicyRuleItem> items = request.getRules() != null ? request.getRules() : List.of();
 		if (!items.isEmpty()) {
-			List<Long> ruleIds = items.stream()
-				.map(CleaningPolicyRuleItem::getRuleId)
-				.filter(Objects::nonNull)
+			List<Long> ruleIds = items.stream().map(CleaningPolicyRuleItem::getRuleId).filter(Objects::nonNull)
 				.collect(Collectors.toList());
 			if (!ruleIds.isEmpty()) {
 				List<CleaningRule> rules = ruleMapper
@@ -165,8 +163,8 @@ public class CleaningPolicyService {
 				}
 			}
 		}
-		policyRuleMapper
-			.delete(new LambdaQueryWrapper<CleaningPolicyRule>().eq(CleaningPolicyRule::getPolicyId, policyId));
+		policyRuleMapper.delete(new LambdaQueryWrapper<CleaningPolicyRule>().eq(CleaningPolicyRule::getPolicyId,
+				policyId));
 		for (CleaningPolicyRuleItem item : items) {
 			if (item.getRuleId() == null) {
 				continue;

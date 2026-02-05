@@ -22,7 +22,7 @@ public class CleaningJob {
 
 	private Long agentId;
 
-	private Integer datasourceId;
+	private Long datasourceId;
 
 	private String tableName;
 

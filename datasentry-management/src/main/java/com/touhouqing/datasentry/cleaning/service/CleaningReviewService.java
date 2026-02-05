@@ -6,14 +6,11 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningReviewStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
-import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningBackupRecord;
-import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
 import com.touhouqing.datasentry.cleaning.model.CleaningRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
-import com.touhouqing.datasentry.cleaning.util.CleaningWritebackValidator;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPool;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPoolFactory;
 import com.touhouqing.datasentry.entity.Datasource;
@@ -47,8 +44,6 @@ public class CleaningReviewService {
 	private final CleaningReviewTaskMapper reviewTaskMapper;
 
 	private final CleaningBackupRecordMapper backupRecordMapper;
-
-	private final CleaningJobRunMapper jobRunMapper;
 
 	private final CleaningRecordMapper recordMapper;
 
@@ -203,10 +198,6 @@ public class CleaningReviewService {
 		if (task == null) {
 			throw new InvalidInputException("Review task not found");
 		}
-		if (encryptionService.isEncryptionEnabled() && !encryptionService.hasValidKey()) {
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, "Missing backup master key");
-			return reviewTaskMapper.selectById(task.getId());
-		}
 		Map<String, Object> beforeRow = parseJsonMap(task.getBeforeRowJson());
 		Map<String, Object> writebackPayload = parseJsonMap(task.getWritebackPayloadJson());
 		if (beforeRow.isEmpty() || writebackPayload.isEmpty()) {
@@ -225,13 +216,6 @@ public class CleaningReviewService {
 		}
 		DBConnectionPool pool = connectionPoolFactory.getPoolByDbType(datasource.getType());
 		try (Connection connection = pool.getConnection(datasourceService.getDbConfig(datasource))) {
-			Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta = CleaningWritebackValidator
-				.loadColumnMeta(connection, task.getTableName());
-			String validationError = CleaningWritebackValidator.validateValues(columnMeta, writebackPayload);
-			if (validationError != null) {
-				updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, validationError);
-				return reviewTaskMapper.selectById(task.getId());
-			}
 			if (!matchesCurrentRow(connection, task.getTableName(), pkRef, beforeRow)) {
 				updateStatus(task.getId(), CleaningReviewStatus.CONFLICT.name(), reviewer, reason);
 				return reviewTaskMapper.selectById(task.getId());
@@ -319,7 +303,6 @@ public class CleaningReviewService {
 		if (task == null) {
 			return;
 		}
-		String policySnapshotJson = resolvePolicySnapshot(task.getJobRunId());
 		CleaningRecord record = CleaningRecord.builder()
 			.agentId(task.getAgentId())
 			.traceId(task.getJobRunId() != null ? String.valueOf(task.getJobRunId()) : null)
@@ -329,7 +312,7 @@ public class CleaningReviewService {
 			.pkJson(task.getPkJson())
 			.columnName(task.getColumnName())
 			.actionTaken(actionTaken)
-			.policySnapshotJson(policySnapshotJson)
+			.policySnapshotJson(null)
 			.verdict(task.getVerdict() != null ? task.getVerdict() : "UNKNOWN")
 			.categoriesJson(task.getCategoriesJson())
 			.sanitizedPreview(task.getSanitizedPreview())
@@ -339,17 +322,6 @@ public class CleaningReviewService {
 			.createdTime(LocalDateTime.now())
 			.build();
 		recordMapper.insert(record);
-	}
-
-	private String resolvePolicySnapshot(Long jobRunId) {
-		if (jobRunId == null) {
-			return null;
-		}
-		CleaningJobRun run = jobRunMapper.selectById(jobRunId);
-		if (run == null) {
-			return null;
-		}
-		return run.getPolicySnapshotJson();
 	}
 
 	private PkRef resolvePk(String pkJson) {

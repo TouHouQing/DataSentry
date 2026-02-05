@@ -22,7 +22,7 @@ public class CleaningBackupRecord {
 
 	private Long jobRunId;
 
-	private Integer datasourceId;
+	private Long datasourceId;
 
 	private String tableName;
 
