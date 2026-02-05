@@ -20,6 +20,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.pipeline.CleaningPipeline;
+import com.touhouqing.datasentry.cleaning.util.CleaningWritebackValidator;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPool;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPoolFactory;
 import com.touhouqing.datasentry.entity.Datasource;
@@ -101,7 +102,7 @@ public class CleaningBatchProcessor {
 		}
 
 		List<CleaningAllowlist> allowlists = Optional.ofNullable(allowlistMapper.findActive()).orElse(List.of());
-		CleaningPolicySnapshot snapshot = policyResolver.resolveSnapshot(job.getPolicyId());
+		CleaningPolicySnapshot snapshot = resolvePolicySnapshot(run, job);
 		String pkColumn = preflight.pkColumn();
 		List<String> targetColumns = preflight.targetColumns();
 		Map<String, String> updateMapping = preflight.updateMapping();
@@ -119,6 +120,8 @@ public class CleaningBatchProcessor {
 
 		try (Connection connection = pool.getConnection(datasourceService.getDbConfig(datasource))) {
 			DatabaseDialectEnum dialect = resolveDialect(connection);
+			Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta = CleaningWritebackValidator
+				.loadColumnMeta(connection, job.getTableName());
 			while (true) {
 				CleaningJobRun latestRun = jobRunMapper.selectById(run.getId());
 				if (latestRun == null) {
@@ -141,7 +144,7 @@ public class CleaningBatchProcessor {
 					}
 					String pkJson = toJsonSafe(Map.of(pkColumn, pkValue));
 					RowProcessResult rowResult = processRow(run.getId(), job, snapshot, allowlists, sanitizeRequested,
-							pkJson, pkColumn, pkValue, row, targetColumns, updateMapping, softDeleteMapping,
+							pkJson, pkColumn, pkValue, row, targetColumns, updateMapping, softDeleteMapping, columnMeta,
 							connection);
 					totalScanned++;
 					if (rowResult.flagged()) {
@@ -173,7 +176,8 @@ public class CleaningBatchProcessor {
 	private RowProcessResult processRow(Long runId, CleaningJob job, CleaningPolicySnapshot snapshot,
 			List<CleaningAllowlist> allowlists, boolean sanitizeRequested, String pkJson, String pkColumn,
 			String pkValue, Map<String, String> row, List<String> targetColumns, Map<String, String> updateMapping,
-			Map<String, Object> softDeleteMapping, Connection connection) {
+			Map<String, Object> softDeleteMapping, Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta,
+			Connection connection) {
 		try {
 			boolean writebackEnabled = CleaningJobMode.WRITEBACK.name().equalsIgnoreCase(job.getMode());
 			CleaningWritebackMode writebackMode = parseWritebackMode(job.getWritebackMode());
@@ -256,14 +260,16 @@ public class CleaningBatchProcessor {
 							}
 						}
 						if (!updateValues.isEmpty()) {
-							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, updateValues, connection);
+							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, updateValues, columnMeta,
+									connection);
 							written = true;
 						}
 					}
 					else if (writebackMode == CleaningWritebackMode.SOFT_DELETE && !softDeleteTriggers.isEmpty()
 							&& !softDeleteReviewRequired) {
 						if (!softDeleteMapping.isEmpty()) {
-							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, softDeleteMapping, connection);
+							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, softDeleteMapping, columnMeta,
+									connection);
 							written = true;
 						}
 					}
@@ -321,7 +327,12 @@ public class CleaningBatchProcessor {
 	}
 
 	private void backupAndWrite(Long runId, CleaningJob job, String pkJson, String pkColumn, String pkValue,
-			Map<String, String> row, Map<String, Object> updateValues, Connection connection) throws Exception {
+			Map<String, String> row, Map<String, Object> updateValues,
+			Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta, Connection connection) throws Exception {
+		String validationError = CleaningWritebackValidator.validateValues(columnMeta, updateValues);
+		if (validationError != null) {
+			throw new IllegalStateException(validationError);
+		}
 		Map<String, Object> beforeRow = new LinkedHashMap<>();
 		for (String column : updateValues.keySet()) {
 			beforeRow.put(column, row.get(column));
@@ -496,6 +507,19 @@ public class CleaningBatchProcessor {
 			}
 		}
 		return CleaningWritebackMode.NONE;
+	}
+
+	private CleaningPolicySnapshot resolvePolicySnapshot(CleaningJobRun run, CleaningJob job) {
+		String snapshotJson = run.getPolicySnapshotJson();
+		if (snapshotJson != null && !snapshotJson.isBlank()) {
+			try {
+				return JsonUtil.getObjectMapper().readValue(snapshotJson, CleaningPolicySnapshot.class);
+			}
+			catch (Exception e) {
+				log.warn("Failed to parse policy snapshot for run {}", run.getId(), e);
+			}
+		}
+		return policyResolver.resolveSnapshot(job.getPolicyId());
 	}
 
 	private CleaningReviewPolicy parseReviewPolicy(String policy) {

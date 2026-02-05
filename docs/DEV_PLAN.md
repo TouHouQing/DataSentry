@@ -5,7 +5,8 @@
 本计划以“先固化模型与约束、再实现数据面、最后补齐运维与企业级能力”为主线，覆盖实时文本与数据库批处理两条主链路。默认备份策略为 **MetaDB**，预算控制采用 **批处理暂停 / 在线智能降级拦截** 的差异化默认策略。
 
 ## Scope
-- In: 清理领域模型、MetaDB 表设计与迁移、策略版本化、级联检测（L1/L2/L3）、JSONPath 局部脱敏、写回/软硬删/回滚、Pre-flight、Graceful Shutdown、DLQ、Shadow Mode、预算控制、通知、人审、API 与 UI。
+- In: 清理领域模型、MetaDB 表设计与迁移、策略版本化、级联检测（L1/L2/L3）、写回/软硬删/回滚、Pre-flight、Graceful Shutdown、DLQ、Shadow Mode、预算控制、通知、人审、API 与 UI。
+- 备注：结构化字段（JSON/JSONPath）支持推迟到 P2。
 - Out: 默认引入外部中间件（Kafka/Redis）、非“实时文本/数据库”输入源、完整复合主键引擎（仅先支持虚拟主键或 unique_index_column）。
 
 ## Milestones
@@ -19,12 +20,11 @@
 ## Action items
 ### P0 (Core & API)
 [x] **冻结架构与需求**：完善 `docs/DATA_CLEANING_ARCHITECTURE.md`，对外发布执行版架构。  
-[x] **MetaDB 设计与迁移**：落地 `datasentry_cleaning_*` 表，含 `policy_version_snapshot`、`metrics_json`、`execution_time_ms`、`detector_source`、`dlq`。  
-[ ] **策略版本化**：JobRun 绑定 policy snapshot，运行中只读不可变。  
+[x] **MetaDB 设计与迁移**：落地 `datasentry_cleaning_*` 表，含 `policy_snapshot_json`、`metrics_json`、`execution_time_ms`、`detector_source`、`dlq`。  
+[x] **策略版本化**：JobRun 绑定 policy snapshot，运行中只读不可变。  
 [x] **Pipeline Runtime**：实现 Ingest/Normalize/Detect/Decide/Act/Audit，内置 L1/L2/L3 级联检测与 allowlist 优先级。  
-[ ] **结构化字段**：支持 JSONPath 解析与局部脱敏（不破坏 JSON 结构）。  
 [x] **API & 权限**：新增实时清理 API（check/sanitize），权限分权与审计最小闭环。  
-[x] **本地调试工具**：提供轻量 CLI/Local Main，快速验证正则与 JSONPath。  
+[x] **本地调试工具**：提供轻量 CLI/Local Main，快速验证正则与基础规则。  
 [x] **全局特性开关**：新增 `datasentry.cleaning.enabled`，Controller/Pipeline 入口第一行校验，支持紧急关闭。  
 [x] **CI 回归保护**：把清理模块基础单测接入 CI，保证不破坏原有 NL2SQL 编译与测试。  
 
@@ -33,11 +33,11 @@
 [x] **动作执行（UPDATE/软删）**：WRITEBACK 可用，软删支持；硬删/人审后写回暂缓。  
 [x] **Pre-flight & Graceful Shutdown**：连接/字段/权限/MetaDB 配额校验；批次完成后退出。  
 [x] **备份（MetaDB）**：默认 MetaDB 备份，密文落库。  
-[ ] **回滚**：基于备份记录恢复业务数据。  
+[x] **回滚**：基于备份记录恢复业务数据。  
 [x] **密钥管理与加密**：Backup Record AES-GCM 加密存储，Master Key 通过环境变量/配置注入。  
-[ ] **人审链路**：Review 任务流、审核决策、写回审批闭环。  
-[ ] **策略配置 UI**：可视化配置规则/Prompt/白名单/动作策略。  
-[ ] **人审工作台 UI**：审核任务列表、详情比对、通过/拒绝与回滚入口。  
+[x] **人审链路**：Review 任务流、审核决策、写回审批闭环。  
+[x] **策略配置 UI**：可视化配置规则/Prompt/白名单/动作策略。  
+[x] **人审工作台 UI**：审核任务列表、详情比对、通过/拒绝与回滚入口。  
 
 ### P2 (Enterprise & Cost)
 [ ] **预算控制体系**：事前预估 / 事中监控 / 事后审计；可配置软硬限制。  
@@ -45,6 +45,7 @@
 [ ] **计价来源与同步**：采用 “DB + 本地缓存 + 在线同步” 轻量方案。  
 [ ] **L2 模型集成**：P1 先实现 Dummy L2（透传），并创建 Spike 任务调研 DJL + ONNX Runtime。  
 [ ] **Shadow Mode & DLQ**：影子流量验证与毒药数据隔离。  
+[ ] **结构化字段**：支持 JSONPath 解析与局部脱敏（不破坏 JSON 结构）。  
 [ ] **通知与观测**：告警通道、指标面板、成本与性能可视化。  
 [ ] **测试与验证**：单测、集成测试、回滚测试、预算熔断测试；CI 通过后进行性能与延迟基准测试。
 
@@ -95,11 +96,8 @@
 **长度保护**
 - `TruncationPolicy`: 默认 **拒绝写回并记录**（避免截断破坏脱敏效果）。
 
-**JSONPath 替换**
-- 写回修改强制使用 Jackson Tree（Spring Boot 默认集成，减少依赖）。
-- 路径解析二选一：
-  - A：引入 Jayway JsonPath 解析 `$.` 语法，再映射为 Jackson Tree 定位与替换（兼容性高）。
-  - B：前端改为传 JsonPointer（`/` 开头），直接 Jackson Tree 解析（性能更高）。
+**JSON 结构化字段（P2）**
+- 结构化字段解析与 JSONPath 局部脱敏推迟到 P2，本阶段不实现。
 
 ### 预算与计价
 **TokenCounter**
@@ -112,8 +110,8 @@
 
 ## Tech Spec Checklist
 - 清理对象与接口签名确定（Context/Node/Result/Policy Snapshot）。
-- 关键依赖选型（JSONPath 语法与库、L2 模型运行时、Token 计数器）。
+- 关键依赖选型（L2 模型运行时、Token 计数器）。
 - 数据库分页与租约 SQL 规范化。
-- 写回安全策略（类型/长度/JSONPath）。
+- 写回安全策略（类型/长度）。
 - 预算与熔断策略的明确默认值。
 - L2 预加载（Warm-up）与内存占用评估。

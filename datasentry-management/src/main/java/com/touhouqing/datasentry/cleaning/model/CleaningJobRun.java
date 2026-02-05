@@ -34,6 +34,8 @@ public class CleaningJobRun {
 
 	private String checkpointJson;
 
+	private String policySnapshotJson;
+
 	private Long totalScanned;
 
 	private Long totalFlagged;

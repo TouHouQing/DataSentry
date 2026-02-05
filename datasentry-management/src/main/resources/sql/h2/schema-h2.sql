@@ -383,6 +383,7 @@ CREATE TABLE IF NOT EXISTS datasentry_cleaning_job_run (
   heartbeat_time TIMESTAMP NULL DEFAULT NULL COMMENT '心跳时间',
   attempt INT DEFAULT 0 COMMENT '重试次数',
   checkpoint_json TEXT COMMENT '游标检查点JSON',
+  policy_snapshot_json TEXT COMMENT '策略快照',
   total_scanned BIGINT DEFAULT 0 COMMENT '扫描总数',
   total_flagged BIGINT DEFAULT 0 COMMENT '命中总数',
   total_written BIGINT DEFAULT 0 COMMENT '写回总数',
