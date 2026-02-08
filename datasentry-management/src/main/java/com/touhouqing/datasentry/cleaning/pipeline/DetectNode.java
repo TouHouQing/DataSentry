@@ -12,12 +12,14 @@ import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.model.NodeResult;
 import com.touhouqing.datasentry.cleaning.util.CleaningAllowlistMatcher;
+import com.touhouqing.datasentry.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Component
 @Slf4j
@@ -59,12 +61,27 @@ public class DetectNode implements PipelineNode {
 				&& snapshot.getConfig().resolvedLlmEnabled()
 				&& shouldEscalateToL3(l1Findings, l2Findings, policyConfig);
 		if (escalatedToL3) {
-			boolean hasLlmRule = rules.stream()
-				.anyMatch(rule -> CleaningRuleType.LLM.name().equalsIgnoreCase(rule.getRuleType()));
-			if (hasLlmRule) {
-				l3Findings.addAll(llmDetector.detect(text));
-				findings.addAll(l3Findings);
+			List<CleaningRule> llmRules = rules.stream()
+					.filter(rule -> CleaningRuleType.LLM.name().equalsIgnoreCase(rule.getRuleType()))
+					.toList();
+
+			for (CleaningRule rule : llmRules) {
+				String prompt = null;
+				try {
+					if (rule.getConfigJson() != null && !rule.getConfigJson().isBlank()) {
+						Map<String, Object> config = JsonUtil.getObjectMapper()
+							.readValue(rule.getConfigJson(), Map.class);
+						if (config.get("prompt") instanceof String) {
+							prompt = (String) config.get("prompt");
+						}
+					}
+				}
+				catch (Exception e) {
+					log.warn("Failed to parse LLM rule config: {}", rule.getId(), e);
+				}
+				l3Findings.addAll(llmDetector.detect(text, prompt));
 			}
+			findings.addAll(l3Findings);
 		}
 		List<CleaningAllowlist> allowlists = getAllowlists(context);
 		List<Finding> filteredFindings = CleaningAllowlistMatcher.filterFindings(text, findings, allowlists);

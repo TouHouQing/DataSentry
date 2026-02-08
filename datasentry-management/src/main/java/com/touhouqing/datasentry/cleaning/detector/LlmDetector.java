@@ -24,11 +24,17 @@ public class LlmDetector {
 
 	private final LlmService llmService;
 
-	public List<Finding> detect(String text) {
+	public List<Finding> detect(String text, String customPrompt) {
 		if (text == null || text.isBlank()) {
 			return List.of();
 		}
-		String systemPrompt = PromptConstant.getCleaningDetectPromptTemplate().render(Map.of());
+		String systemPrompt;
+		if (customPrompt != null && !customPrompt.isBlank()) {
+			systemPrompt = customPrompt;
+		}
+		else {
+			systemPrompt = PromptConstant.getCleaningDetectPromptTemplate().render(Map.of());
+		}
 		Flux<ChatResponse> responseFlux = llmService.call(systemPrompt, text);
 		String content = llmService.toStringFlux(responseFlux)
 			.collect(StringBuilder::new, StringBuilder::append)

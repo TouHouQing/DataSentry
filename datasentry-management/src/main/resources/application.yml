@@ -6,7 +6,7 @@ spring:
   datasource:
     url: ${DATASENTRY_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/datasentry?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${DATASENTRY_DATASOURCE_USERNAME:root}
-    password: ${DATASENTRY_DATASOURCE_PASSWORD:qhy000916}
+    password: ${DATASENTRY_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
   sql:

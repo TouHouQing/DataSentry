@@ -407,8 +407,21 @@
               <el-input
                 v-model="ruleForm.regexMaskText"
                 placeholder="例如：*** 或 [PHONE]，留空默认 [REDACTED]"
+                @input="onRegexMaskTextInput"
               />
               <div class="field-help">{{ getFieldHelp('policy.regex.maskText') }}</div>
+            </el-form-item>
+          </template>
+
+          <template v-else-if="ruleForm.ruleType === 'LLM'">
+            <el-form-item label="提示词 (Prompt)">
+              <el-input
+                v-model="ruleForm.llmPrompt"
+                type="textarea"
+                :rows="6"
+                placeholder="请输入自定义提示词，留空则使用系统默认提示词"
+              />
+              <div class="field-help">用于指导大模型进行数据清洗的系统提示词。</div>
             </el-form-item>
           </template>
 
@@ -516,6 +529,7 @@
     regexFlags: ['CASE_INSENSITIVE'],
     regexMaskMode: 'PLACEHOLDER',
     regexMaskText: '[REDACTED]',
+    llmPrompt: '',
     showAdvancedConfig: false,
     configJson: '',
   });
@@ -692,6 +706,12 @@
     } else if (!String(ruleForm.regexMaskText || '').trim()) {
       ruleForm.regexMaskText = '[REDACTED]';
     }
+    if (ruleForm.showAdvancedConfig) {
+      syncConfigJsonFromStructured();
+    }
+  };
+
+  const onRegexMaskTextInput = () => {
     if (ruleForm.showAdvancedConfig) {
       syncConfigJsonFromStructured();
     }
@@ -997,11 +1017,14 @@
       if (ruleForm.showAdvancedConfig) {
         syncConfigJsonFromStructured();
       }
+    } else if (ruleForm.ruleType === 'LLM') {
+      ruleForm.llmPrompt = String(parsedConfig.prompt || '');
     } else {
       ruleForm.regexPattern = '';
       ruleForm.regexFlags = ['CASE_INSENSITIVE'];
       ruleForm.regexMaskMode = 'PLACEHOLDER';
       ruleForm.regexMaskText = '[REDACTED]';
+      ruleForm.llmPrompt = '';
     }
 
     ruleDialogVisible.value = true;
@@ -1062,6 +1085,12 @@
         ...(flags ? { flags } : {}),
         maskMode,
         ...(maskMode === 'DELETE' ? {} : { maskText: maskText || '[REDACTED]' }),
+      };
+    }
+
+    if (ruleForm.ruleType === 'LLM') {
+      return {
+        prompt: String(ruleForm.llmPrompt || '').trim(),
       };
     }
 

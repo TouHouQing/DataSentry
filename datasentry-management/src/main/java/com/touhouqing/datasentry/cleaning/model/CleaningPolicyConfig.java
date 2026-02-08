@@ -25,6 +25,8 @@ public class CleaningPolicyConfig {
 
 	private Double shadowSampleRatio;
 
+	private String highRiskSanitizationMode;
+
 	public double resolvedBlockThreshold() {
 		return blockThreshold != null ? blockThreshold : 0.7;
 	}
@@ -54,6 +56,10 @@ public class CleaningPolicyConfig {
 			return 1.0;
 		}
 		return value;
+	}
+
+	public String resolvedHighRiskSanitizationMode() {
+		return highRiskSanitizationMode != null ? highRiskSanitizationMode : "MITIGATE";
 	}
 
 }

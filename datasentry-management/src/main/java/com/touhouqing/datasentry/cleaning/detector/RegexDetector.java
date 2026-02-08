@@ -86,15 +86,17 @@ public class RegexDetector {
 		if (config == null) {
 			return DEFAULT_MASK;
 		}
-		String maskMode = config.getMaskMode();
-		if (RegexRuleConfig.MASK_MODE_DELETE.equalsIgnoreCase(maskMode)) {
+		if (log.isDebugEnabled()) {
+			log.debug("Resolve replacement config: {}", JsonUtil.toJson(config));
+		}
+		if (RegexRuleConfig.MASK_MODE_DELETE.equalsIgnoreCase(config.getMaskMode())) {
 			return "";
 		}
 		String maskText = config.getMaskText();
-		if (maskText == null || maskText.isBlank()) {
-			return DEFAULT_MASK;
+		if (maskText != null && !maskText.isBlank()) {
+			return maskText;
 		}
-		return maskText;
+		return DEFAULT_MASK;
 	}
 
 	private String previewText(String text) {

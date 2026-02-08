@@ -194,8 +194,8 @@ public class CleaningMetaService {
 	private Map<String, Map<String, Boolean>> ruleTypeUiBehavior() {
 		Map<String, Map<String, Boolean>> behavior = new LinkedHashMap<>();
 		behavior.put("REGEX", Map.of("showStructuredConfig", true, "showAdvancedJson", true));
-		behavior.put("L2_DUMMY", Map.of("showStructuredConfig", false, "showAdvancedJson", true));
-		behavior.put("LLM", Map.of("showStructuredConfig", false, "showAdvancedJson", true));
+		behavior.put("L2_DUMMY", Map.of("showStructuredConfig", false, "showAdvancedJson", false));
+		behavior.put("LLM", Map.of("showStructuredConfig", false, "showAdvancedJson", false));
 		return behavior;
 	}
 
@@ -279,6 +279,7 @@ public class CleaningMetaService {
 		help.put("policy.regex.maskText", "替换文本仅在固定文本模式下生效，留空默认 [REDACTED]");
 		help.put("policy.severity", "严重度越大越严格，更容易进入 REVIEW/BLOCK；越小越宽松");
 		help.put("policy.threshold", "阈值越低越严格，命中率更高但误杀风险也会提升");
+		help.put("policy.highRiskSanitizationMode", "高风险脱敏模式：MITIGATE（默认）脱敏后由 BLOCK 转为 REDACTED 可写回；QUARANTINE 保持 BLOCK 不写回");
 		help.put("policy.shadow", "Shadow 为影子模式，只观测不影响主决策");
 		help.put("job.targetConfigType", "列模式直接清理列值；JSONPath 模式只清理 JSON 子字段");
 		help.put("job.reviewPolicy", "人审策略决定何时进入人工审核队列");

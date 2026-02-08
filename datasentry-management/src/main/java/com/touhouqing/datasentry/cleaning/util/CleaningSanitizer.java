@@ -32,7 +32,12 @@ public final class CleaningSanitizer {
 		if (valid.isEmpty()) {
 			return text;
 		}
-		valid.sort(Comparator.comparingInt(Finding::getStart));
+		// Sort by start position. If starts are equal, prioritize findings with replacement text over deletions.
+		valid.sort(Comparator.comparingInt(Finding::getStart)
+			.thenComparingInt(f -> {
+				String r = resolveReplacement(f);
+				return (r == null || r.isEmpty()) ? 1 : 0;
+			}));
 		StringBuilder builder = new StringBuilder();
 		int cursor = 0;
 		for (Finding finding : valid) {
