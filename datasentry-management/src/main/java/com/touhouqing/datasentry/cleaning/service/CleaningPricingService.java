@@ -69,32 +69,32 @@ public class CleaningPricingService {
 	public List<PricingCatalogDTO> listActivePricingFromModelConfig() {
 		List<ModelConfig> configs = modelConfigMapper.findAll();
 		return configs.stream()
-				.filter(config -> config.getInputPricePer1k() != null && config.getOutputPricePer1k() != null)
-				.map(config -> {
-					PricingCatalogDTO dto = new PricingCatalogDTO();
-					dto.setProvider(config.getProvider());
-					dto.setModel(config.getModelName());
-					dto.setVersion("default");
-					dto.setInputPricePer1k(config.getInputPricePer1k());
-					dto.setOutputPricePer1k(config.getOutputPricePer1k());
-					dto.setCurrency(config.getCurrency() != null ? config.getCurrency() : DEFAULT_CURRENCY);
-					dto.setUpdatedTime(config.getPricingUpdatedAt() != null ? config.getPricingUpdatedAt()
-							: config.getUpdatedTime());
-					return dto;
-				})
-				.sorted((a, b) -> {
-					if (a.getUpdatedTime() == null && b.getUpdatedTime() == null) {
-						return 0;
-					}
-					if (a.getUpdatedTime() == null) {
-						return 1;
-					}
-					if (b.getUpdatedTime() == null) {
-						return -1;
-					}
-					return b.getUpdatedTime().compareTo(a.getUpdatedTime());
-				})
-				.collect(Collectors.toList());
+			.filter(config -> config.getInputPricePer1k() != null && config.getOutputPricePer1k() != null)
+			.map(config -> {
+				PricingCatalogDTO dto = new PricingCatalogDTO();
+				dto.setProvider(config.getProvider());
+				dto.setModel(config.getModelName());
+				dto.setVersion("default");
+				dto.setInputPricePer1k(config.getInputPricePer1k());
+				dto.setOutputPricePer1k(config.getOutputPricePer1k());
+				dto.setCurrency(config.getCurrency() != null ? config.getCurrency() : DEFAULT_CURRENCY);
+				dto.setUpdatedTime(
+						config.getPricingUpdatedAt() != null ? config.getPricingUpdatedAt() : config.getUpdatedTime());
+				return dto;
+			})
+			.sorted((a, b) -> {
+				if (a.getUpdatedTime() == null && b.getUpdatedTime() == null) {
+					return 0;
+				}
+				if (a.getUpdatedTime() == null) {
+					return 1;
+				}
+				if (b.getUpdatedTime() == null) {
+					return -1;
+				}
+				return b.getUpdatedTime().compareTo(a.getUpdatedTime());
+			})
+			.collect(Collectors.toList());
 	}
 
 	public void clearCache() {

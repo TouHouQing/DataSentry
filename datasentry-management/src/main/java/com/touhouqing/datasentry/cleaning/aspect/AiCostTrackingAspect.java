@@ -21,8 +21,8 @@ import reactor.core.publisher.Flux;
 import java.math.BigDecimal;
 
 /**
- * AI Cost Tracking Aspect
- * Intercepts BlockLlmService (Chat) and EmbeddingModel (Vector) calls.
+ * AI Cost Tracking Aspect Intercepts BlockLlmService (Chat) and EmbeddingModel (Vector)
+ * calls.
  */
 @Slf4j
 @Aspect
@@ -31,124 +31,127 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class AiCostTrackingAspect {
 
-    private final CleaningCostLedgerService costLedgerService;
-    private final CleaningPricingService pricingService;
-    private final ModelConfigDataService modelConfigDataService;
+	private final CleaningCostLedgerService costLedgerService;
 
-    // Use InheritableThreadLocal to support child threads in the graph execution
-    private static final ThreadLocal<RequestContext> REQUEST_CONTEXT = new InheritableThreadLocal<>();
+	private final CleaningPricingService pricingService;
 
-    // -------------------------------------------------------------------------
-    // 1. Intercept Chat calls (BlockLlmService)
-    // -------------------------------------------------------------------------
-    // @Around("execution(* com.touhouqing.datasentry.service.llm.impls.BlockLlmService.call*(..))")
-    public Object trackChatServiceCall(ProceedingJoinPoint joinPoint) throws Throwable {
-        // Capture context at the moment of invocation
-        RequestContext context = REQUEST_CONTEXT.get();
+	private final ModelConfigDataService modelConfigDataService;
 
-        Object result = joinPoint.proceed();
+	// Use InheritableThreadLocal to support child threads in the graph execution
+	private static final ThreadLocal<RequestContext> REQUEST_CONTEXT = new InheritableThreadLocal<>();
 
-        if (context != null && result instanceof Flux<?> flux) {
-            // Hook into the Flux stream to record cost when response arrives
-            return ((Flux<ChatResponse>) flux).doOnNext(response -> trackChatCost(context, response));
-        }
+	// -------------------------------------------------------------------------
+	// 1. Intercept Chat calls (BlockLlmService)
+	// -------------------------------------------------------------------------
+	// @Around("execution(*
+	// com.touhouqing.datasentry.service.llm.impls.BlockLlmService.call*(..))")
+	public Object trackChatServiceCall(ProceedingJoinPoint joinPoint) throws Throwable {
+		// Capture context at the moment of invocation
+		RequestContext context = REQUEST_CONTEXT.get();
 
-        return result;
-    }
+		Object result = joinPoint.proceed();
 
-    // -------------------------------------------------------------------------
-    // 2. Intercept Embedding calls (EmbeddingModel)
-    // -------------------------------------------------------------------------
-    @Around("execution(* org.springframework.ai.embedding.EmbeddingModel.call(..)) && args(request)")
-    public Object trackEmbeddingCall(ProceedingJoinPoint joinPoint, EmbeddingRequest request) throws Throwable {
-        RequestContext context = REQUEST_CONTEXT.get();
+		if (context != null && result instanceof Flux<?> flux) {
+			// Hook into the Flux stream to record cost when response arrives
+			return ((Flux<ChatResponse>) flux).doOnNext(response -> trackChatCost(context, response));
+		}
 
-        Object result = joinPoint.proceed();
+		return result;
+	}
 
-        if (context != null && result instanceof EmbeddingResponse response) {
-            trackEmbeddingCost(context, response);
-        }
+	// -------------------------------------------------------------------------
+	// 2. Intercept Embedding calls (EmbeddingModel)
+	// -------------------------------------------------------------------------
+	@Around("execution(* org.springframework.ai.embedding.EmbeddingModel.call(..)) && args(request)")
+	public Object trackEmbeddingCall(ProceedingJoinPoint joinPoint, EmbeddingRequest request) throws Throwable {
+		RequestContext context = REQUEST_CONTEXT.get();
 
-        return result;
-    }
+		Object result = joinPoint.proceed();
 
-    // -------------------------------------------------------------------------
-    // Logic
-    // -------------------------------------------------------------------------
+		if (context != null && result instanceof EmbeddingResponse response) {
+			trackEmbeddingCost(context, response);
+		}
 
-    private void trackChatCost(RequestContext context, ChatResponse response) {
-        try {
-            if (response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null) {
-                return;
-            }
+		return result;
+	}
 
-            var usage = response.getMetadata().getUsage();
-            long inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
-            // Use getCompletionTokens() as verified in previous step
-            long outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
+	// -------------------------------------------------------------------------
+	// Logic
+	// -------------------------------------------------------------------------
 
-            if (inputTokens == 0 && outputTokens == 0) return;
+	private void trackChatCost(RequestContext context, ChatResponse response) {
+		try {
+			if (response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null) {
+				return;
+			}
 
-            ModelConfigDTO config = modelConfigDataService.getActiveConfigByType(ModelType.CHAT);
-            if (config == null) return;
+			var usage = response.getMetadata().getUsage();
+			long inputTokens = usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+			// Use getCompletionTokens() as verified in previous step
+			long outputTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
 
-            recordCost(context, "CHAT", config.getProvider(), config.getModelName(), inputTokens, outputTokens);
-        } catch (Exception e) {
-            log.error("Failed to track chat cost", e);
-        }
-    }
+			if (inputTokens == 0 && outputTokens == 0)
+				return;
 
-    private void trackEmbeddingCost(RequestContext context, EmbeddingResponse response) {
-        try {
-            if (response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null) {
-                return;
-            }
+			ModelConfigDTO config = modelConfigDataService.getActiveConfigByType(ModelType.CHAT);
+			if (config == null)
+				return;
 
-            var usage = response.getMetadata().getUsage();
-            long inputTokens = usage.getTotalTokens() != null ? usage.getTotalTokens() : 0;
+			recordCost(context, "CHAT", config.getProvider(), config.getModelName(), inputTokens, outputTokens);
+		}
+		catch (Exception e) {
+			log.error("Failed to track chat cost", e);
+		}
+	}
 
-            if (inputTokens == 0) return;
+	private void trackEmbeddingCost(RequestContext context, EmbeddingResponse response) {
+		try {
+			if (response == null || response.getMetadata() == null || response.getMetadata().getUsage() == null) {
+				return;
+			}
 
-            ModelConfigDTO config = modelConfigDataService.getActiveConfigByType(ModelType.EMBEDDING);
-            if (config == null) return;
+			var usage = response.getMetadata().getUsage();
+			long inputTokens = usage.getTotalTokens() != null ? usage.getTotalTokens() : 0;
 
-            recordCost(context, "EMBEDDING", config.getProvider(), config.getModelName(), inputTokens, 0);
-        } catch (Exception e) {
-            log.error("Failed to track embedding cost", e);
-        }
-    }
+			if (inputTokens == 0)
+				return;
 
-    private void recordCost(RequestContext context, String level, String provider, String model, long input, long output) {
-        CleaningPricingService.Pricing pricing = pricingService.resolvePricing(provider, model);
+			ModelConfigDTO config = modelConfigDataService.getActiveConfigByType(ModelType.EMBEDDING);
+			if (config == null)
+				return;
 
-        CleaningCostLedgerService.CostEntry entry = new CleaningCostLedgerService.CostEntry(
-                null, null,
-                context.agentId(),
-                context.threadId(),
-                CleaningCostChannel.ANALYSIS,
-                level,
-                provider, model,
-                input, output,
-                pricing.inputPricePer1k(),
-                pricing.outputPricePer1k(),
-                pricing.currency()
-        );
+			recordCost(context, "EMBEDDING", config.getProvider(), config.getModelName(), inputTokens, 0);
+		}
+		catch (Exception e) {
+			log.error("Failed to track embedding cost", e);
+		}
+	}
 
-        BigDecimal cost = costLedgerService.recordCost(entry);
-        log.info("💰 Cost Recorded [{}]: {} {} (In: {}, Out: {})", level, cost, pricing.currency(), input, output);
-    }
+	private void recordCost(RequestContext context, String level, String provider, String model, long input,
+			long output) {
+		CleaningPricingService.Pricing pricing = pricingService.resolvePricing(provider, model);
 
-    public static void setContext(String threadId, Long agentId) {
-        REQUEST_CONTEXT.set(new RequestContext(threadId, agentId));
-    }
+		CleaningCostLedgerService.CostEntry entry = new CleaningCostLedgerService.CostEntry(null, null,
+				context.agentId(), context.threadId(), CleaningCostChannel.ANALYSIS, level, provider, model, input,
+				output, pricing.inputPricePer1k(), pricing.outputPricePer1k(), pricing.currency());
 
-    public static void clearContext() {
-        REQUEST_CONTEXT.remove();
-    }
+		BigDecimal cost = costLedgerService.recordCost(entry);
+		log.info("💰 Cost Recorded [{}]: {} {} (In: {}, Out: {})", level, cost, pricing.currency(), input, output);
+	}
 
-    public static RequestContext getContext() {
-        return REQUEST_CONTEXT.get();
-    }
+	public static void setContext(String threadId, Long agentId) {
+		REQUEST_CONTEXT.set(new RequestContext(threadId, agentId));
+	}
 
-    public record RequestContext(String threadId, Long agentId) {}
+	public static void clearContext() {
+		REQUEST_CONTEXT.remove();
+	}
+
+	public static RequestContext getContext() {
+		return REQUEST_CONTEXT.get();
+	}
+
+	public record RequestContext(String threadId, Long agentId) {
+	}
+
 }

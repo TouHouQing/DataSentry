@@ -56,7 +56,8 @@ public class CleaningPriceSyncService {
 		// The requirement is to deprecate the catalog table.
 		// However, for compatibility we might just return empty or what's in the DB.
 		// Since we deprecated the sync, the DB might be stale.
-		// But listCatalog is used by... wait, the controller now calls listActivePricingFromModelConfig.
+		// But listCatalog is used by... wait, the controller now calls
+		// listActivePricingFromModelConfig.
 		// So this method might be unused?
 		// Let's keep it as is for now to avoid breaking other callers if any.
 		// But I need to fix imports.

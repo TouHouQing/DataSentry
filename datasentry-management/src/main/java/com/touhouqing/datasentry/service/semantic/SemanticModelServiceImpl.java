@@ -193,8 +193,7 @@ public class SemanticModelServiceImpl implements SemanticModelService {
 						.columnComment(item.getColumnComment())
 						.dataType(item.getDataType())
 						.status(1) // 默认启用
-						.createdTime(
-								item.getCreateTime() != null ? item.getCreateTime() : LocalDateTime.now())
+						.createdTime(item.getCreateTime() != null ? item.getCreateTime() : LocalDateTime.now())
 						.build();
 					semanticModelMapper.insert(newModel);
 					log.info("插入语义模型: agentId={}, tableName={}, columnName={}", dto.getAgentId(), item.getTableName(),

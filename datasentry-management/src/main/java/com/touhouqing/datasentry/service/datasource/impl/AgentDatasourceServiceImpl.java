@@ -53,7 +53,8 @@ public class AgentDatasourceServiceImpl implements AgentDatasourceService {
 		Assert.notEmpty(tables, "Tables cannot be empty");
 		try {
 			// Set context for cost tracking (Embedding)
-			com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.setContext(UUID.randomUUID().toString(), agentId);
+			com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.setContext(UUID.randomUUID().toString(),
+					agentId);
 
 			String agentIdStr = String.valueOf(agentId);
 			log.info("Initializing schema for agent: {} with datasource: {}, tables: {}", agentIdStr, datasourceId,

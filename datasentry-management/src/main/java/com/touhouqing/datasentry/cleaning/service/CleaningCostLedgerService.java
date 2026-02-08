@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 public class CleaningCostLedgerService {
 
 	private final CleaningCostLedgerMapper costLedgerMapper;
+
 	private final com.touhouqing.datasentry.mapper.AgentMapper agentMapper;
 
 	public BigDecimal recordCost(CostEntry entry) {
@@ -77,7 +78,8 @@ public class CleaningCostLedgerService {
 				.collect(Collectors.toSet());
 
 			// LOGGING: Check if we found any agent IDs
-			// System.out.println("DEBUG: Found " + ledgers.size() + " ledgers. AgentIDs: " + agentIds);
+			// System.out.println("DEBUG: Found " + ledgers.size() + " ledgers. AgentIDs:
+			// " + agentIds);
 
 			if (!agentIds.isEmpty()) {
 				Map<Long, String> agentNameMap = new HashMap<>();
@@ -87,7 +89,8 @@ public class CleaningCostLedgerService {
 						if (agent != null) {
 							agentNameMap.put(agentId, agent.getName());
 						}
-					} catch (Exception e) {
+					}
+					catch (Exception e) {
 						// ignore
 					}
 				}
@@ -97,11 +100,13 @@ public class CleaningCostLedgerService {
 						String name = agentNameMap.get(ledger.getAgentId());
 						if (name != null) {
 							ledger.setAgentName(name);
-						} else {
+						}
+						else {
 							// If name not found, use ID as fallback so it's not empty
 							ledger.setAgentName("Agent-" + ledger.getAgentId());
 						}
-					} else {
+					}
+					else {
 						ledger.setAgentName("Unknown (No ID)");
 					}
 				}

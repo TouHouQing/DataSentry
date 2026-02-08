@@ -18,8 +18,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AI 成本追踪拦截器
- * 自动追踪对话模型和向量模型的 token 使用量和成本
+ * AI 成本追踪拦截器 自动追踪对话模型和向量模型的 token 使用量和成本
  */
 @Slf4j
 @Component

@@ -60,7 +60,8 @@ public class GraphServiceImpl implements GraphService {
 
 	public GraphServiceImpl(StateGraph stateGraph, ExecutorService executorService,
 			MultiTurnContextManager multiTurnContextManager,
-			com.touhouqing.datasentry.cleaning.service.AiCostTrackingService aiCostTrackingService) throws GraphStateException {
+			com.touhouqing.datasentry.cleaning.service.AiCostTrackingService aiCostTrackingService)
+			throws GraphStateException {
 		this.compiledGraph = stateGraph.compile(CompileConfig.builder().interruptBefore(HUMAN_FEEDBACK_NODE).build());
 		this.executor = executorService;
 		this.multiTurnContextManager = multiTurnContextManager;
@@ -78,7 +79,8 @@ public class GraphServiceImpl implements GraphService {
 				AiCostContextHolder.setContext(UUID.randomUUID().toString(), agentIdLong);
 				// Register session for fallback
 				aiCostTrackingService.registerSession(UUID.randomUUID().toString(), agentIdLong);
-			} catch (NumberFormatException e) {
+			}
+			catch (NumberFormatException e) {
 				log.warn("Invalid agentId format in nl2sql: {}", agentId);
 			}
 
@@ -87,7 +89,8 @@ public class GraphServiceImpl implements GraphService {
 						RunnableConfig.builder().build())
 				.orElseThrow();
 			return state.value(SQL_GENERATE_OUTPUT, "");
-		} finally {
+		}
+		finally {
 			AiCostTrackingAspect.clearContext();
 			AiCostContextHolder.clearContext();
 		}
@@ -156,9 +159,11 @@ public class GraphServiceImpl implements GraphService {
 			Long agentIdLong = Long.parseLong(agentId);
 			AiCostTrackingAspect.setContext(threadId, agentIdLong);
 			AiCostContextHolder.setContext(threadId, agentIdLong);
-			// Register session for fallback in case ThreadLocal is lost in reactive stream
+			// Register session for fallback in case ThreadLocal is lost in reactive
+			// stream
 			aiCostTrackingService.registerSession(threadId, agentIdLong);
-		} catch (NumberFormatException e) {
+		}
+		catch (NumberFormatException e) {
 			log.warn("Invalid agentId format: {}", agentId);
 		}
 
@@ -226,7 +231,8 @@ public class GraphServiceImpl implements GraphService {
 		Long agentIdLong = null;
 		try {
 			agentIdLong = Long.parseLong(agentId);
-		} catch (NumberFormatException e) {
+		}
+		catch (NumberFormatException e) {
 			// ignore
 		}
 		final Long finalAgentId = agentIdLong;
@@ -234,7 +240,8 @@ public class GraphServiceImpl implements GraphService {
 		CompletableFuture.runAsync(() -> {
 			// Set context on the worker thread
 			if (finalAgentId != null) {
-				// We must use AiCostTrackingAspect because it's used by the EmbeddingModel aspect
+				// We must use AiCostTrackingAspect because it's used by the
+				// EmbeddingModel aspect
 				// and AiCostTrackingService falls back to it.
 				AiCostTrackingAspect.setContext(threadId, finalAgentId);
 				// Also set Holder for consistency if anything relies exclusively on it
@@ -262,13 +269,19 @@ public class GraphServiceImpl implements GraphService {
 						context.setDisposable(disposable);
 					}
 				}
-			} finally {
-				// Clear context after setup is done (though Flux callbacks might run on different threads depending on scheduler)
-				// Note: The actual cost tracking happens in the Flux pipeline (doOnNext) which runs on the Flux's scheduler.
+			}
+			finally {
+				// Clear context after setup is done (though Flux callbacks might run on
+				// different threads depending on scheduler)
+				// Note: The actual cost tracking happens in the Flux pipeline (doOnNext)
+				// which runs on the Flux's scheduler.
 				// If the Flux runs on this same thread, this is fine.
-				// If the ChatClient uses a separate executor, the Advisor might run there.
-				// However, our CostTrackingAdvisor for stream captures context at assembly time!
-				// So we just need to ensure context is set *when the stream is assembled* (which happens here or in handleNewProcess).
+				// If the ChatClient uses a separate executor, the Advisor might run
+				// there.
+				// However, our CostTrackingAdvisor for stream captures context at
+				// assembly time!
+				// So we just need to ensure context is set *when the stream is assembled*
+				// (which happens here or in handleNewProcess).
 				// Actually, handleNewProcess builds the stream. subscribe triggers it.
 				AiCostContextHolder.clearContext();
 				AiCostTrackingAspect.clearContext();

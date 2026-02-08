@@ -47,4 +47,5 @@ public class CleaningPriceSyncServiceTest {
 		assertEquals(0, result.getInserted());
 		assertEquals(0, result.getUpdated());
 	}
+
 }

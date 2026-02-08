@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AI 成本追踪服务
- * 提供简单直接的成本记录方法
+ * AI 成本追踪服务 提供简单直接的成本记录方法
  */
 @Slf4j
 @Service
@@ -56,8 +55,8 @@ public class AiCostTrackingService {
 	 * 追踪对话模型成本 (自动获取上下文)
 	 */
 	public void trackChatCost(ChatResponse response) {
-		com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.RequestContext context =
-				com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.getContext();
+		com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.RequestContext context = com.touhouqing.datasentry.cleaning.context.AiCostContextHolder
+			.getContext();
 
 		if (context == null) {
 			// 如果没有上下文，尝试从 Aspect 获取 (兼容旧代码)
@@ -105,7 +104,9 @@ public class AiCostTrackingService {
 			}
 
 			if (agentId == null) {
-				log.warn("❌ Cost Tracking Failed: No agentId found for threadId: {}. Context missing and not in registry.", threadId);
+				log.warn(
+						"❌ Cost Tracking Failed: No agentId found for threadId: {}. Context missing and not in registry.",
+						threadId);
 				return;
 			}
 
@@ -132,8 +133,8 @@ public class AiCostTrackingService {
 				return;
 			}
 
-			log.info("🔍 CostTracking: Model Config - Provider: {}, Model: {}", config.getProvider(), config.getModelName());
-
+			log.info("🔍 CostTracking: Model Config - Provider: {}, Model: {}", config.getProvider(),
+					config.getModelName());
 
 			String provider = config.getProvider();
 			String model = config.getModelName();
@@ -141,10 +142,8 @@ public class AiCostTrackingService {
 			// 获取价格
 			CleaningPricingService.Pricing pricing = pricingService.resolvePricing(provider, model);
 
-			log.info("💰 Resolved Pricing for CHAT [{}]: Input {} {}/1k, Output {} {}/1k",
-					model,
-					pricing.inputPricePer1k(), pricing.currency(),
-					pricing.outputPricePer1k(), pricing.currency());
+			log.info("💰 Resolved Pricing for CHAT [{}]: Input {} {}/1k, Output {} {}/1k", model,
+					pricing.inputPricePer1k(), pricing.currency(), pricing.outputPricePer1k(), pricing.currency());
 
 			// 记录成本
 			CleaningCostLedgerService.CostEntry entry = new CleaningCostLedgerService.CostEntry(null, // jobId
@@ -228,8 +227,8 @@ public class AiCostTrackingService {
 			// 获取价格
 			CleaningPricingService.Pricing pricing = pricingService.resolvePricing(provider, model);
 
-			log.info("💰 Resolved Pricing for EMBEDDING [{}]: Input {} {}/1k",
-					model, pricing.inputPricePer1k(), pricing.currency());
+			log.info("💰 Resolved Pricing for EMBEDDING [{}]: Input {} {}/1k", model, pricing.inputPricePer1k(),
+					pricing.currency());
 
 			// 记录成本（向量模型只有输入成本）
 			CleaningCostLedgerService.CostEntry entry = new CleaningCostLedgerService.CostEntry(null, // jobId

@@ -44,8 +44,7 @@ public class AnalysisCostTracker {
 			}
 
 			// 获取价格
-			CleaningPricingService.Pricing pricing = pricingService.resolvePricing(usage.provider(),
-					usage.model());
+			CleaningPricingService.Pricing pricing = pricingService.resolvePricing(usage.provider(), usage.model());
 
 			// 记录成本
 			CleaningCostLedgerService.CostEntry entry = new CleaningCostLedgerService.CostEntry(null, // jobId
@@ -64,8 +63,7 @@ public class AnalysisCostTracker {
 			);
 
 			BigDecimal cost = costLedgerService.recordCost(entry);
-			log.info("Recorded analysis cost for session {}: {} {}", message.getSessionId(), cost,
-					pricing.currency());
+			log.info("Recorded analysis cost for session {}: {} {}", message.getSessionId(), cost, pricing.currency());
 
 		}
 		catch (Exception e) {

@@ -18,59 +18,68 @@ import reactor.core.publisher.Flux;
 @RequiredArgsConstructor
 public class CostTrackingAdvisor implements CallAdvisor, StreamAdvisor {
 
-    private final AiCostTrackingService costTrackingService;
+	private final AiCostTrackingService costTrackingService;
 
-    @Override
-    public String getName() {
-        return "CostTrackingAdvisor";
-    }
+	@Override
+	public String getName() {
+		return "CostTrackingAdvisor";
+	}
 
-    @Override
-    public int getOrder() {
-        return 0;
-    }
+	@Override
+	public int getOrder() {
+		return 0;
+	}
 
-    @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        ChatClientResponse response = chain.nextCall(request);
+	@Override
+	public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+		ChatClientResponse response = chain.nextCall(request);
 
-        try {
-            AiCostContextHolder.RequestContext context = AiCostContextHolder.getContext();
-            if (context != null) {
-                costTrackingService.trackChatCost(context.threadId(), response.chatResponse());
-            } else {
-                costTrackingService.trackChatCost(response.chatResponse());
-            }
-        } catch (Exception e) {
-            log.error("Failed to track cost in advisor", e);
-        }
+		try {
+			AiCostContextHolder.RequestContext context = AiCostContextHolder.getContext();
+			if (context != null) {
+				costTrackingService.trackChatCost(context.threadId(), response.chatResponse());
+			}
+			else {
+				costTrackingService.trackChatCost(response.chatResponse());
+			}
+		}
+		catch (Exception e) {
+			log.error("Failed to track cost in advisor", e);
+		}
 
-        return response;
-    }
+		return response;
+	}
 
-    @Override
-    public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
-        // Capture context at assembly time (when .stream() is called)
-        AiCostContextHolder.RequestContext context = AiCostContextHolder.getContext();
-        String capturedThreadId = context != null ? context.threadId() : null;
+	@Override
+	public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
+		// Capture context at assembly time (when .stream() is called)
+		AiCostContextHolder.RequestContext context = AiCostContextHolder.getContext();
+		String capturedThreadId = context != null ? context.threadId() : null;
 
-        if (capturedThreadId == null) {
-            log.warn("⚠️ CostTrackingAdvisor: No context captured at stream assembly time! Thread: {}", Thread.currentThread().getName());
-        } else {
-            log.info("✅ CostTrackingAdvisor: Captured threadId {} at stream assembly. Thread: {}", capturedThreadId, Thread.currentThread().getName());
-        }
+		if (capturedThreadId == null) {
+			log.warn("⚠️ CostTrackingAdvisor: No context captured at stream assembly time! Thread: {}",
+					Thread.currentThread().getName());
+		}
+		else {
+			log.info("✅ CostTrackingAdvisor: Captured threadId {} at stream assembly. Thread: {}", capturedThreadId,
+					Thread.currentThread().getName());
+		}
 
-        return chain.nextStream(request).doOnNext(response -> {
-            try {
-                if (capturedThreadId != null) {
-                    costTrackingService.trackChatCost(capturedThreadId, response.chatResponse());
-                } else {
-                    log.warn("⚠️ CostTrackingAdvisor: Trying fallback tracking (no threadId). Thread: {}", Thread.currentThread().getName());
-                    costTrackingService.trackChatCost(response.chatResponse());
-                }
-            } catch (Exception e) {
-                log.error("Failed to track cost in advisor (stream)", e);
-            }
-        });
-    }
+		return chain.nextStream(request).doOnNext(response -> {
+			try {
+				if (capturedThreadId != null) {
+					costTrackingService.trackChatCost(capturedThreadId, response.chatResponse());
+				}
+				else {
+					log.warn("⚠️ CostTrackingAdvisor: Trying fallback tracking (no threadId). Thread: {}",
+							Thread.currentThread().getName());
+					costTrackingService.trackChatCost(response.chatResponse());
+				}
+			}
+			catch (Exception e) {
+				log.error("Failed to track cost in advisor (stream)", e);
+			}
+		});
+	}
+
 }

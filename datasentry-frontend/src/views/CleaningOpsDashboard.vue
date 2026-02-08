@@ -74,9 +74,7 @@
           <el-col :xs="24" :sm="12" :md="6">
             <el-card shadow="never" class="metric-card">
               <div class="metric-label">价格配置状态</div>
-              <div class="metric-value status-value">
-                模型配置
-              </div>
+              <div class="metric-value status-value">模型配置</div>
             </el-card>
           </el-col>
           <el-col :xs="24" :sm="12" :md="6">
@@ -170,11 +168,7 @@
             <div class="panel-header">
               <span>价格目录（来自模型配置）</span>
               <div class="panel-actions">
-                <el-button
-                  size="small"
-                  type="primary"
-                  @click="navigateToModelConfig"
-                >
+                <el-button size="small" type="primary" @click="navigateToModelConfig">
                   前往模型配置
                 </el-button>
               </div>
