@@ -57,7 +57,7 @@ public class PythonAnalyzeNode implements NodeAction {
 		String pythonOutput = StateUtil.getStringValue(state, PYTHON_EXECUTE_NODE_OUTPUT);
 		int currentStep = PlanProcessUtil.getCurrentStepNumber(state);
 		@SuppressWarnings("unchecked")
-		Map<String, String> sqlExecuteResult = StateUtil.getObjectValue(state, SQL_EXECUTE_NODE_OUTPUT, Map.class,
+		Map<String, String> stepExecutionResults = StateUtil.getObjectValue(state, SQL_EXECUTE_NODE_OUTPUT, Map.class,
 				new HashMap<>());
 
 		// 检查是否进入降级模式
@@ -72,10 +72,10 @@ public class PythonAnalyzeNode implements NodeAction {
 
 			Flux<GraphResponse<StreamingOutput>> generator = FluxUtil.createStreamingGeneratorWithMessages(
 					this.getClass(), state, "正在处理分析结果...\n", "\n处理完成。", aiResponse -> {
-						Map<String, String> updatedSqlResult = PlanProcessUtil.addStepResult(sqlExecuteResult,
-								currentStep, fallbackMessage);
+						Map<String, String> updatedResults = new HashMap<>(stepExecutionResults);
+						updatedResults.put("step_" + currentStep + "_analysis", fallbackMessage);
 						log.info("python fallback message: {}", fallbackMessage);
-						return Map.of(SQL_EXECUTE_NODE_OUTPUT, updatedSqlResult, PLAN_CURRENT_STEP, currentStep + 1);
+						return Map.of(SQL_EXECUTE_NODE_OUTPUT, updatedResults, PLAN_CURRENT_STEP, currentStep + 1);
 					}, fallbackFlux);
 
 			return Map.of(PYTHON_ANALYSIS_NODE_OUTPUT, generator);
@@ -88,10 +88,10 @@ public class PythonAnalyzeNode implements NodeAction {
 
 		Flux<GraphResponse<StreamingOutput>> generator = FluxUtil.createStreamingGeneratorWithMessages(this.getClass(),
 				state, "正在分析代码运行结果...\n", "\n结果分析完成。", aiResponse -> {
-					Map<String, String> updatedSqlResult = PlanProcessUtil.addStepResult(sqlExecuteResult, currentStep,
-							aiResponse);
+					Map<String, String> updatedResults = new HashMap<>(stepExecutionResults);
+					updatedResults.put("step_" + currentStep + "_analysis", aiResponse);
 					log.info("python analyze result: {}", aiResponse);
-					return Map.of(SQL_EXECUTE_NODE_OUTPUT, updatedSqlResult, PLAN_CURRENT_STEP, currentStep + 1);
+					return Map.of(SQL_EXECUTE_NODE_OUTPUT, updatedResults, PLAN_CURRENT_STEP, currentStep + 1);
 				}, pythonAnalyzeFlux);
 
 		return Map.of(PYTHON_ANALYSIS_NODE_OUTPUT, generator);
