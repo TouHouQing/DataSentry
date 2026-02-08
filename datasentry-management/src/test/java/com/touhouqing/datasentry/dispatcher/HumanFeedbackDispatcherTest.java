@@ -21,6 +21,8 @@ import com.alibaba.cloud.ai.graph.StateGraph;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class HumanFeedbackDispatcherTest {
@@ -37,14 +39,14 @@ class HumanFeedbackDispatcherTest {
 
 	@Test
 	void testWaitForFeedbackReturnsEND() throws Exception {
-		state.updateState(java.util.Map.of("human_next_node", "WAIT_FOR_FEEDBACK"));
+		state.updateState(Map.of("human_next_node", "WAIT_FOR_FEEDBACK"));
 		String next = dispatcher.apply(state);
 		assertEquals(StateGraph.END, next);
 	}
 
 	@Test
 	void testNormalRouting() throws Exception {
-		state.updateState(java.util.Map.of("human_next_node", "PLANNER_NODE"));
+		state.updateState(Map.of("human_next_node", "PLANNER_NODE"));
 		String next = dispatcher.apply(state);
 		assertEquals("PLANNER_NODE", next);
 	}
@@ -57,7 +59,7 @@ class HumanFeedbackDispatcherTest {
 
 	@Test
 	void testRoutesToPlannerAfterRejection() throws Exception {
-		state.updateState(java.util.Map.of("human_next_node", "PLANNER_NODE"));
+		state.updateState(Map.of("human_next_node", "PLANNER_NODE"));
 		String next = dispatcher.apply(state);
 		assertEquals("PLANNER_NODE", next);
 	}

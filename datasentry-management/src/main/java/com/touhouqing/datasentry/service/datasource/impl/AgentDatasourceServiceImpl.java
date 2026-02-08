@@ -26,6 +26,7 @@ import com.touhouqing.datasentry.service.datasource.DatasourceService;
 import com.touhouqing.datasentry.service.schema.SchemaService;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,9 @@ public class AgentDatasourceServiceImpl implements AgentDatasourceService {
 		Assert.notNull(datasourceId, "Datasource ID cannot be null");
 		Assert.notEmpty(tables, "Tables cannot be empty");
 		try {
+			// Set context for cost tracking (Embedding)
+			com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.setContext(UUID.randomUUID().toString(), agentId);
+
 			String agentIdStr = String.valueOf(agentId);
 			log.info("Initializing schema for agent: {} with datasource: {}, tables: {}", agentIdStr, datasourceId,
 					tables);
@@ -78,6 +82,9 @@ public class AgentDatasourceServiceImpl implements AgentDatasourceService {
 		catch (Exception e) {
 			log.error("Failed to initialize schema for agent: {} with datasource: {}", agentId, datasourceId, e);
 			throw new RuntimeException("Failed to initialize schema for agent " + agentId + ": " + e.getMessage(), e);
+		}
+		finally {
+			com.touhouqing.datasentry.cleaning.context.AiCostContextHolder.clearContext();
 		}
 	}
 

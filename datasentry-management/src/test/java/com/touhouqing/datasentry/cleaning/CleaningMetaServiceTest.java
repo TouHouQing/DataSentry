@@ -5,6 +5,7 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningThresholdItemView;
 import com.touhouqing.datasentry.cleaning.service.CleaningMetaService;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -73,8 +74,8 @@ public class CleaningMetaServiceTest {
 		assertTrue(options.getRiskConfirmations().containsKey("WRITEBACK"));
 		assertNotNull(options.getRegexTemplates());
 		assertFalse(options.getRegexTemplates().isEmpty());
-		assertEquals("PLACEHOLDER", options.getJsonConfigTemplates().get("REGEX") instanceof java.util.Map
-				? ((java.util.Map<?, ?>) options.getJsonConfigTemplates().get("REGEX")).get("maskMode") : null);
+		assertEquals("PLACEHOLDER", options.getJsonConfigTemplates().get("REGEX") instanceof Map
+				? ((Map<?, ?>) options.getJsonConfigTemplates().get("REGEX")).get("maskMode") : null);
 		assertNotNull(options.getFieldHelp().get("policy.regex.maskMode"));
 		assertNotNull(options.getFieldHelp().get("policy.regex.maskText"));
 	}

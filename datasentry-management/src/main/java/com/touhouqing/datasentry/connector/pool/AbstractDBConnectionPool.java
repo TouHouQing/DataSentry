@@ -28,6 +28,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -170,7 +172,7 @@ public abstract class AbstractDBConnectionPool implements DBConnectionPool {
 			filters = "stat";
 		}
 
-		java.util.Map<String, String> props = new java.util.HashMap<>();
+		Map<String, String> props = new HashMap<>();
 		props.put(DruidDataSourceFactory.PROP_DRIVERCLASSNAME, driver);
 		props.put(DruidDataSourceFactory.PROP_URL, url);
 		props.put(DruidDataSourceFactory.PROP_USERNAME, username);

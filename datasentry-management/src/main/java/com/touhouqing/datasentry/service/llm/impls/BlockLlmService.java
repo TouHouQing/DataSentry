@@ -15,6 +15,7 @@
  */
 package com.touhouqing.datasentry.service.llm.impls;
 
+import com.touhouqing.datasentry.cleaning.service.AiCostTrackingService;
 import com.touhouqing.datasentry.service.aimodelconfig.AiModelRegistry;
 import com.touhouqing.datasentry.service.llm.LlmService;
 import lombok.AllArgsConstructor;
@@ -26,22 +27,47 @@ import reactor.core.publisher.Mono;
 public class BlockLlmService implements LlmService {
 
 	private final AiModelRegistry registry;
+	private final AiCostTrackingService costTrackingService;
 
 	@Override
 	public Flux<ChatResponse> call(String system, String user) {
-		return Mono
-			.fromCallable(() -> registry.getChatClient().prompt().system(system).user(user).call().chatResponse())
-			.flux();
+		return Mono.fromCallable(() -> {
+			ChatResponse response = registry.getChatClient().prompt().system(system).user(user).call().chatResponse();
+			return response;
+		}).flux();
 	}
 
 	@Override
 	public Flux<ChatResponse> callSystem(String system) {
-		return Mono.fromCallable(() -> registry.getChatClient().prompt().system(system).call().chatResponse()).flux();
+		return Mono.fromCallable(() -> {
+			ChatResponse response = registry.getChatClient().prompt().system(system).call().chatResponse();
+			return response;
+		}).flux();
 	}
 
 	@Override
 	public Flux<ChatResponse> callUser(String user) {
-		return Mono.fromCallable(() -> registry.getChatClient().prompt().user(user).call().chatResponse()).flux();
+		return Mono.fromCallable(() -> {
+			ChatResponse response = registry.getChatClient().prompt().user(user).call().chatResponse();
+			return response;
+		}).flux();
+	}
+
+	private void trackCost(ChatResponse response) {
+		if (costTrackingService != null) {
+			// We can get threadId from the aspect's context holder since we set it in GraphServiceImpl
+			// Or we can rely on AiCostTrackingService to find the context if we refactor it to use the static holder
+			// For now, let's use a simpler approach: get the threadId from the Aspect's context
+			try {
+				// We need the threadId to track cost. Since GraphServiceImpl sets it in AiCostTrackingAspect's ThreadLocal,
+				// we can access it if we expose a getter, or we can just use the ThreadLocal in AiCostTrackingService directly.
+				// However, AiCostTrackingService currently relies on a map passed by threadId.
+				// Let's modify AiCostTrackingService to use the ThreadLocal context too.
+				costTrackingService.trackChatCost(response);
+			} catch (Exception e) {
+				// ignore tracking errors to not disrupt flow
+			}
+		}
 	}
 
 }

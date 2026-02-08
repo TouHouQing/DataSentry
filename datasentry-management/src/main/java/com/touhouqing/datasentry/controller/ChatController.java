@@ -55,6 +55,8 @@ public class ChatController {
 
 	private final ReportTemplateUtil reportTemplateUtil;
 
+	private final com.touhouqing.datasentry.cleaning.service.AnalysisCostTracker analysisCostTracker;
+
 	/**
 	 * Get session list for an agent
 	 */
@@ -120,6 +122,16 @@ public class ChatController {
 
 			if (request.isTitleNeeded()) {
 				sessionTitleService.scheduleTitleGeneration(sessionId, message.getContent());
+			}
+
+			// Track cost for AI assistant messages
+			if ("assistant".equals(savedMessage.getRole()) && request.getAgentId() != null) {
+				try {
+					analysisCostTracker.trackMessageCost(savedMessage, request.getAgentId());
+				}
+				catch (Exception e) {
+					log.error("Failed to track cost for message {}: {}", savedMessage.getId(), e.getMessage());
+				}
 			}
 
 			return ResponseEntity.ok(savedMessage);

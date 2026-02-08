@@ -15,6 +15,7 @@
  */
 package com.touhouqing.datasentry.service.llm;
 
+import com.touhouqing.datasentry.cleaning.service.AiCostTrackingService;
 import com.touhouqing.datasentry.properties.DataSentryProperties;
 import com.touhouqing.datasentry.service.aimodelconfig.AiModelRegistry;
 import com.touhouqing.datasentry.service.llm.impls.BlockLlmService;
@@ -31,13 +32,15 @@ public class LlmServiceFactory implements FactoryBean<LlmService> {
 
 	private final AiModelRegistry aiModelRegistry;
 
+	private final AiCostTrackingService aiCostTrackingService;
+
 	@Override
 	public LlmService getObject() {
 		if (LlmServiceEnum.BLOCK.equals(properties.getLlmServiceType())) {
-			return new BlockLlmService(aiModelRegistry);
+			return new BlockLlmService(aiModelRegistry, aiCostTrackingService);
 		}
 		else {
-			return new StreamLlmService(aiModelRegistry);
+			return new StreamLlmService(aiModelRegistry, aiCostTrackingService);
 		}
 	}
 

@@ -36,4 +36,9 @@ public class ChatMessageDTO {
 	 */
 	private boolean titleNeeded;
 
+	/**
+	 * Agent ID for cost tracking (optional).
+	 */
+	private Long agentId;
+
 }

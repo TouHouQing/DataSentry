@@ -51,7 +51,7 @@ public class CleaningMetricsService {
 		for (CleaningCostLedger ledger : ledgers) {
 			BigDecimal amount = ledger.getCostAmount() != null ? ledger.getCostAmount() : BigDecimal.ZERO;
 			totalCost = totalCost.add(amount);
-			if ("ONLINE".equalsIgnoreCase(ledger.getChannel())) {
+			if ("ONLINE".equalsIgnoreCase(ledger.getChannel()) || "ANALYSIS".equalsIgnoreCase(ledger.getChannel())) {
 				onlineCost = onlineCost.add(amount);
 			}
 			if ("BATCH".equalsIgnoreCase(ledger.getChannel())) {

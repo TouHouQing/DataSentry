@@ -23,6 +23,7 @@ import com.touhouqing.datasentry.entity.SemanticModel;
 import com.touhouqing.datasentry.mapper.AgentDatasourceMapper;
 import com.touhouqing.datasentry.mapper.SemanticModelMapper;
 import com.touhouqing.datasentry.vo.BatchImportResult;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -193,7 +194,7 @@ public class SemanticModelServiceImpl implements SemanticModelService {
 						.dataType(item.getDataType())
 						.status(1) // 默认启用
 						.createdTime(
-								item.getCreateTime() != null ? item.getCreateTime() : java.time.LocalDateTime.now())
+								item.getCreateTime() != null ? item.getCreateTime() : LocalDateTime.now())
 						.build();
 					semanticModelMapper.insert(newModel);
 					log.info("插入语义模型: agentId={}, tableName={}, columnName={}", dto.getAgentId(), item.getTableName(),

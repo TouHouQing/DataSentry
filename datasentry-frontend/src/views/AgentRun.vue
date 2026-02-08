@@ -654,6 +654,7 @@
                     role: 'assistant',
                     content: node[0].text, // 保存原始JSON数据
                     messageType: 'result-set', // 使用特殊的messageType
+                    agentId: parseInt(agentId.value), // 添加 agentId 用于成本追踪
                   };
                   return ChatService.saveMessage(sessionId, aiMessage).catch(error => {
                     console.error('保存AI消息失败:', error);
@@ -672,6 +673,7 @@
               role: 'assistant',
               content: nodeHtml,
               messageType: 'html',
+              agentId: parseInt(agentId.value), // 添加 agentId 用于成本追踪
             };
 
             return ChatService.saveMessage(sessionId, aiMessage).catch(error => {
@@ -847,6 +849,7 @@
                   role: 'assistant',
                   content: sessionState.htmlReportContent,
                   messageType: 'html-report',
+                  agentId: parseInt(agentId.value), // 添加 agentId 用于成本追踪
                 };
 
                 await ChatService.saveMessage(sessionId, htmlReportMessage)
@@ -871,6 +874,7 @@
                   role: 'assistant',
                   content: sessionState.markdownReportContent,
                   messageType: 'markdown-report',
+                  agentId: parseInt(agentId.value), // 添加 agentId 用于成本追踪
                 };
 
                 await ChatService.saveMessage(sessionId, markdownMessage)

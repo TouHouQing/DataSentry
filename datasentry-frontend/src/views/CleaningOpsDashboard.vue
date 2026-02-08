@@ -73,16 +73,10 @@
           </el-col>
           <el-col :xs="24" :sm="12" :md="6">
             <el-card shadow="never" class="metric-card">
-              <div class="metric-label">最近价格同步</div>
+              <div class="metric-label">价格配置状态</div>
               <div class="metric-value status-value">
-                {{ formatDate(metrics.lastPricingSyncTime) }}
+                模型配置
               </div>
-            </el-card>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-card shadow="never" class="metric-card warning">
-              <div class="metric-label">价格同步失败次数</div>
-              <div class="metric-value">{{ metrics.pricingSyncFailureCount || 0 }}</div>
             </el-card>
           </el-col>
           <el-col :xs="24" :sm="12" :md="6">
@@ -174,24 +168,23 @@
         <el-card class="panel" shadow="never">
           <template #header>
             <div class="panel-header">
-              <span>价格目录同步</span>
+              <span>价格目录（来自模型配置）</span>
               <div class="panel-actions">
                 <el-button
                   size="small"
                   type="primary"
-                  :loading="syncingPricing"
-                  @click="syncPricing"
+                  @click="navigateToModelConfig"
                 >
-                  立即同步
+                  前往模型配置
                 </el-button>
               </div>
             </div>
           </template>
           <el-alert
-            v-if="pricingSyncResult"
-            :type="pricingSyncResult.success ? 'success' : 'warning'"
-            :title="pricingSyncResult.message || '同步完成'"
+            type="info"
+            title="价格已迁移至模型配置管理，请前往【模型配置】页面维护价格"
             show-icon
+            :closable="false"
             class="sync-result"
           />
           <el-table :data="pricingCatalog" stripe>
@@ -296,8 +289,16 @@
               </template>
             </el-table-column>
             <el-table-column prop="detectorLevel" label="层级" width="110" />
-            <el-table-column prop="jobRunId" label="Run ID" width="110" />
-            <el-table-column prop="inputTokensEst" label="输入Token" width="120" />
+            <el-table-column prop="agentName" label="智能体" min-width="120">
+              <template #default="scope">
+                {{ scope.row.agentName || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="Token消耗" width="130">
+              <template #default="scope">
+                {{ (scope.row.inputTokensEst || 0) + (scope.row.outputTokensEst || 0) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="costAmount" label="成本" width="120">
               <template #default="scope">¥ {{ formatCost(scope.row.costAmount) }}</template>
             </el-table-column>
@@ -319,7 +320,6 @@
 
   const loadingAll = ref(false);
   const loadingDlq = ref(false);
-  const syncingPricing = ref(false);
 
   const metrics = reactive({
     totalRuns: 0,
@@ -331,7 +331,6 @@
     totalCost: 0,
     onlineCost: 0,
     batchCost: 0,
-    lastPricingSyncTime: '',
     pricingSyncFailureCount: 0,
     webhookPushSuccessCount: 0,
     webhookPushFailureCount: 0,
@@ -356,7 +355,6 @@
   const dlqRecords = ref([]);
   const costLedgers = ref([]);
   const pricingCatalog = ref([]);
-  const pricingSyncResult = ref(null);
   const dlqStatus = ref('READY');
 
   const formatCost = value => {
@@ -459,21 +457,8 @@
     }
   };
 
-  const syncPricing = async () => {
-    syncingPricing.value = true;
-    try {
-      pricingSyncResult.value = await cleaningService.syncPricingNow('manual');
-      if (pricingSyncResult.value?.success) {
-        ElMessage.success('价格同步成功');
-      } else {
-        ElMessage.warning(pricingSyncResult.value?.message || '价格同步失败');
-      }
-      await Promise.all([loadPricingCatalog(), loadMetrics(), loadAlerts()]);
-    } catch (error) {
-      ElMessage.error('触发价格同步失败');
-    } finally {
-      syncingPricing.value = false;
-    }
+  const navigateToModelConfig = () => {
+    window.location.href = '/model-config';
   };
 
   const loadAll = async () => {

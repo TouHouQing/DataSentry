@@ -15,6 +15,8 @@
  */
 package com.touhouqing.datasentry.service.graph;
 
+import com.touhouqing.datasentry.cleaning.aspect.AiCostTrackingAspect;
+import com.touhouqing.datasentry.cleaning.context.AiCostContextHolder;
 import com.touhouqing.datasentry.enums.TextType;
 import com.touhouqing.datasentry.workflow.node.PlannerNode;
 import com.touhouqing.datasentry.dto.GraphRequest;
@@ -54,20 +56,41 @@ public class GraphServiceImpl implements GraphService {
 
 	private final MultiTurnContextManager multiTurnContextManager;
 
+	private final com.touhouqing.datasentry.cleaning.service.AiCostTrackingService aiCostTrackingService;
+
 	public GraphServiceImpl(StateGraph stateGraph, ExecutorService executorService,
-			MultiTurnContextManager multiTurnContextManager) throws GraphStateException {
+			MultiTurnContextManager multiTurnContextManager,
+			com.touhouqing.datasentry.cleaning.service.AiCostTrackingService aiCostTrackingService) throws GraphStateException {
 		this.compiledGraph = stateGraph.compile(CompileConfig.builder().interruptBefore(HUMAN_FEEDBACK_NODE).build());
 		this.executor = executorService;
 		this.multiTurnContextManager = multiTurnContextManager;
+		this.aiCostTrackingService = aiCostTrackingService;
 	}
 
 	@Override
 	public String nl2sql(String naturalQuery, String agentId) throws GraphRunnerException {
-		OverAllState state = compiledGraph
-			.invoke(Map.of(IS_ONLY_NL2SQL, true, INPUT_KEY, naturalQuery, AGENT_ID, agentId),
-					RunnableConfig.builder().build())
-			.orElseThrow();
-		return state.value(SQL_GENERATE_OUTPUT, "");
+		try {
+			// Set context for cost tracking
+			try {
+				long agentIdLong = Long.parseLong(agentId);
+				AiCostTrackingAspect.setContext(UUID.randomUUID().toString(), agentIdLong);
+				// Also set Holder as it is used by CostTrackingAdvisor
+				AiCostContextHolder.setContext(UUID.randomUUID().toString(), agentIdLong);
+				// Register session for fallback
+				aiCostTrackingService.registerSession(UUID.randomUUID().toString(), agentIdLong);
+			} catch (NumberFormatException e) {
+				log.warn("Invalid agentId format in nl2sql: {}", agentId);
+			}
+
+			OverAllState state = compiledGraph
+				.invoke(Map.of(IS_ONLY_NL2SQL, true, INPUT_KEY, naturalQuery, AGENT_ID, agentId),
+						RunnableConfig.builder().build())
+				.orElseThrow();
+			return state.value(SQL_GENERATE_OUTPUT, "");
+		} finally {
+			AiCostTrackingAspect.clearContext();
+			AiCostContextHolder.clearContext();
+		}
 	}
 
 	@Override
@@ -101,6 +124,10 @@ public class GraphServiceImpl implements GraphService {
 		StreamContext context = streamContextMap.remove(threadId);
 		if (context != null) {
 			context.cleanup();
+			// Unregister cost tracking session
+			if (aiCostTrackingService != null) {
+				aiCostTrackingService.unregisterSession(threadId);
+			}
 			log.info("Cleaned up stream context for threadId: {}", threadId);
 		}
 	}
@@ -123,6 +150,18 @@ public class GraphServiceImpl implements GraphService {
 			log.warn("StreamContext already cleaned for threadId: {}, skipping stream start", threadId);
 			return;
 		}
+
+		// ✅ 设置成本追踪上下文
+		try {
+			Long agentIdLong = Long.parseLong(agentId);
+			AiCostTrackingAspect.setContext(threadId, agentIdLong);
+			AiCostContextHolder.setContext(threadId, agentIdLong);
+			// Register session for fallback in case ThreadLocal is lost in reactive stream
+			aiCostTrackingService.registerSession(threadId, agentIdLong);
+		} catch (NumberFormatException e) {
+			log.warn("Invalid agentId format: {}", agentId);
+		}
+
 		String multiTurnContext = multiTurnContextManager.buildContext(threadId);
 		multiTurnContextManager.beginTurn(threadId, query);
 		Flux<NodeOutput> nodeOutputFlux = compiledGraph.stream(
@@ -182,27 +221,57 @@ public class GraphServiceImpl implements GraphService {
 	 */
 	private void subscribeToFlux(StreamContext context, Flux<NodeOutput> nodeOutputFlux, GraphRequest graphRequest,
 			String agentId, String threadId) {
+		// Capture context from the current thread (controller thread)
+		// We can also reconstruct it from arguments since we have agentId and threadId
+		Long agentIdLong = null;
+		try {
+			agentIdLong = Long.parseLong(agentId);
+		} catch (NumberFormatException e) {
+			// ignore
+		}
+		final Long finalAgentId = agentIdLong;
+
 		CompletableFuture.runAsync(() -> {
-			// 在订阅之前检查上下文是否仍然有效
-			if (context.isCleaned()) {
-				log.debug("StreamContext cleaned before subscription for threadId: {}", threadId);
-				return;
+			// Set context on the worker thread
+			if (finalAgentId != null) {
+				// We must use AiCostTrackingAspect because it's used by the EmbeddingModel aspect
+				// and AiCostTrackingService falls back to it.
+				AiCostTrackingAspect.setContext(threadId, finalAgentId);
+				// Also set Holder for consistency if anything relies exclusively on it
+				AiCostContextHolder.setContext(threadId, finalAgentId);
 			}
-			Disposable disposable = nodeOutputFlux.subscribe(output -> handleNodeOutput(graphRequest, output),
-					error -> handleStreamError(agentId, threadId, error),
-					() -> handleStreamComplete(agentId, threadId));
-			// 原子性地设置 Disposable，如果已经清理则立即释放
-			synchronized (context) {
+			try {
+				// 在订阅之前检查上下文是否仍然有效
 				if (context.isCleaned()) {
-					// 如果已经清理，立即释放刚创建的 Disposable
-					if (disposable != null && !disposable.isDisposed()) {
-						disposable.dispose();
+					log.debug("StreamContext cleaned before subscription for threadId: {}", threadId);
+					return;
+				}
+				Disposable disposable = nodeOutputFlux.subscribe(output -> handleNodeOutput(graphRequest, output),
+						error -> handleStreamError(agentId, threadId, error),
+						() -> handleStreamComplete(agentId, threadId));
+				// 原子性地设置 Disposable，如果已经清理则立即释放
+				synchronized (context) {
+					if (context.isCleaned()) {
+						// 如果已经清理，立即释放刚创建的 Disposable
+						if (disposable != null && !disposable.isDisposed()) {
+							disposable.dispose();
+						}
+					}
+					else {
+						// 只有在未清理的情况下才设置 Disposable
+						context.setDisposable(disposable);
 					}
 				}
-				else {
-					// 只有在未清理的情况下才设置 Disposable
-					context.setDisposable(disposable);
-				}
+			} finally {
+				// Clear context after setup is done (though Flux callbacks might run on different threads depending on scheduler)
+				// Note: The actual cost tracking happens in the Flux pipeline (doOnNext) which runs on the Flux's scheduler.
+				// If the Flux runs on this same thread, this is fine.
+				// If the ChatClient uses a separate executor, the Advisor might run there.
+				// However, our CostTrackingAdvisor for stream captures context at assembly time!
+				// So we just need to ensure context is set *when the stream is assembled* (which happens here or in handleNewProcess).
+				// Actually, handleNewProcess builds the stream. subscribe triggers it.
+				AiCostContextHolder.clearContext();
+				AiCostTrackingAspect.clearContext();
 			}
 		}, executor);
 	}
@@ -212,6 +281,10 @@ public class GraphServiceImpl implements GraphService {
 	 */
 	private void handleStreamError(String agentId, String threadId, Throwable error) {
 		log.error("Error in stream processing for threadId: {}: ", threadId, error);
+
+		// ✅ 清理成本追踪上下文
+		AiCostTrackingAspect.clearContext();
+
 		StreamContext context = streamContextMap.remove(threadId);
 		if (context != null && !context.isCleaned() && context.getSink() != null) {
 			// 检查 sink 是否还有订阅者
@@ -235,6 +308,10 @@ public class GraphServiceImpl implements GraphService {
 	private void handleStreamComplete(String agentId, String threadId) {
 		log.info("Stream processing completed successfully for threadId: {}", threadId);
 		multiTurnContextManager.finishTurn(threadId);
+
+		// ✅ 清理成本追踪上下文
+		AiCostTrackingAspect.clearContext();
+
 		StreamContext context = streamContextMap.remove(threadId);
 		if (context != null && !context.isCleaned() && context.getSink() != null) {
 			if (context.getSink().currentSubscriberCount() > 0) {

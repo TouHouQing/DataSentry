@@ -17,8 +17,10 @@ package com.touhouqing.datasentry.mapper;
 
 import com.touhouqing.datasentry.entity.*;
 import com.touhouqing.datasentry.service.MySqlContainerConfiguration;
+import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -120,7 +122,7 @@ public class MappersTest {
 	@Test
 	public void testChatSessionAndMessageCrud() {
 		Long agentId = createAgent("session-holder");
-		String sessionId = java.util.UUID.randomUUID().toString();
+		String sessionId = UUID.randomUUID().toString();
 		// insert session
 		ChatSession session = new ChatSession(sessionId, agentId, "tc_session", "active", 1L);
 		session.setCreateTime(LocalDateTime.now());
@@ -237,7 +239,7 @@ public class MappersTest {
 		k.setSynonyms("a,b");
 		k.setAgentId(agentId);
 		try {
-			java.lang.reflect.Field field = BusinessKnowledge.class.getDeclaredField("isRecall");
+			Field field = BusinessKnowledge.class.getDeclaredField("isRecall");
 			field.setAccessible(true);
 			field.set(k, 1);
 		}

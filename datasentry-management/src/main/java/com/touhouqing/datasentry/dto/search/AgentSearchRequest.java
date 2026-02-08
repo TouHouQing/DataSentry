@@ -18,11 +18,14 @@ package com.touhouqing.datasentry.dto.search;
 import lombok.Builder;
 import lombok.Data;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 @Data
 @Builder
-public class AgentSearchRequest implements java.io.Serializable {
+public class AgentSearchRequest implements Serializable {
 
-	@java.io.Serial
+	@Serial
 	private static final long serialVersionUID = 1L;
 
 	private String agentId;

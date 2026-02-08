@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -46,7 +48,7 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 		String reviewPolicy = resolveEnum(request.getReviewPolicy(), CleaningReviewPolicy.NEVER.name(),
 				CleaningReviewPolicy.class);
 		String targetConfigType = targetConfigValidator.resolveType(request.getTargetConfigType());
-		java.util.Map<String, String> normalizedJsonPathMappings = targetConfigValidator
+		Map<String, String> normalizedJsonPathMappings = targetConfigValidator
 			.normalizeJsonPathMappings(targetConfigType, request.getTargetColumns(), request.getTargetConfig());
 		LocalDateTime now = LocalDateTime.now();
 		CleaningJob job = CleaningJob.builder()
@@ -92,7 +94,7 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 		String reviewPolicy = resolveEnum(request.getReviewPolicy(), CleaningReviewPolicy.NEVER.name(),
 				CleaningReviewPolicy.class);
 		String targetConfigType = targetConfigValidator.resolveType(request.getTargetConfigType());
-		java.util.Map<String, String> normalizedJsonPathMappings = targetConfigValidator
+		Map<String, String> normalizedJsonPathMappings = targetConfigValidator
 			.normalizeJsonPathMappings(targetConfigType, request.getTargetColumns(), request.getTargetConfig());
 		LocalDateTime now = LocalDateTime.now();
 		CleaningJob job = CleaningJob.builder()
@@ -151,7 +153,7 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 	}
 
 	@Override
-	public java.util.List<CleaningJob> listJobs(Long agentId, Long datasourceId, Integer enabled) {
+	public List<CleaningJob> listJobs(Long agentId, Long datasourceId, Integer enabled) {
 		LambdaQueryWrapper<CleaningJob> wrapper = new LambdaQueryWrapper<>();
 		if (agentId != null) {
 			wrapper.eq(CleaningJob::getAgentId, agentId);
@@ -200,7 +202,7 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 	}
 
 	@Override
-	public java.util.List<CleaningJobRun> listRuns(Long jobId, String status) {
+	public List<CleaningJobRun> listRuns(Long jobId, String status) {
 		LambdaQueryWrapper<CleaningJobRun> wrapper = new LambdaQueryWrapper<>();
 		if (jobId != null) {
 			wrapper.eq(CleaningJobRun::getJobId, jobId);
@@ -263,7 +265,7 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 	}
 
 	@Override
-	public java.util.List<CleaningCostLedger> listCostLedger(Long jobRunId, String traceId, String channel) {
+	public List<CleaningCostLedger> listCostLedger(Long jobRunId, String traceId, String channel) {
 		return costLedgerService.list(jobRunId, traceId, channel);
 	}
 

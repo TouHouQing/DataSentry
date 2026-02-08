@@ -16,10 +16,8 @@ public class CleaningPriceSyncScheduler {
 
 	@Scheduled(fixedDelayString = "${spring.ai.alibaba.datasentry.cleaning.pricing.sync-interval-ms:1800000}")
 	public void sync() {
-		if (!dataSentryProperties.getCleaning().isEnabled() || !priceSyncService.isSyncEnabled()) {
-			return;
-		}
-		priceSyncService.syncNow("scheduled");
+		// 价格同步功能已废弃，价格管理已迁移至模型配置
+		return;
 	}
 
 }

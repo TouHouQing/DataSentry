@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS `datasentry_model_config` (
   `id` BIGINT(11) NOT NULL AUTO_INCREMENT,
   `provider` varchar(255) NOT NULL COMMENT '厂商标识 (方便前端展示回显，实际调用主要靠 baseUrl)',
   `base_url` varchar(255) NOT NULL COMMENT '关键配置',
-  `api_key` varchar(255) NOT NULL COMMENT 'API密钥',
+  `api_key` varchar(255) DEFAULT NULL COMMENT 'API密钥',
   `model_name` varchar(255) NOT NULL COMMENT '模型名称',
   `model_version` varchar(64) DEFAULT NULL COMMENT '模型版本',
   `input_price_per_1k` DECIMAL(12,6) DEFAULT NULL COMMENT '输入 token 每千计价',
@@ -416,22 +416,6 @@ CREATE TABLE IF NOT EXISTS datasentry_cleaning_job_run (
   INDEX idx_status (status),
   INDEX idx_lease_until (lease_until)
 ) ENGINE=InnoDB COMMENT='清理任务运行实例';
-
--- 清理价格目录
-CREATE TABLE IF NOT EXISTS datasentry_cleaning_price_catalog (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  provider VARCHAR(100) NOT NULL COMMENT '提供方',
-  model VARCHAR(100) NOT NULL COMMENT '模型标识',
-  version VARCHAR(50) NOT NULL DEFAULT 'default' COMMENT '价格版本',
-  input_price_per_1k DECIMAL(12,6) NOT NULL COMMENT '输入 token 每千计价',
-  output_price_per_1k DECIMAL(12,6) NOT NULL COMMENT '输出 token 每千计价',
-  currency VARCHAR(16) NOT NULL DEFAULT 'CNY' COMMENT '货币单位',
-  created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_provider_model_version (provider, model, version),
-  INDEX idx_provider_model (provider, model)
-) ENGINE=InnoDB COMMENT='清理价格目录';
 
 -- 清理成本台账
 CREATE TABLE IF NOT EXISTS datasentry_cleaning_cost_ledger (

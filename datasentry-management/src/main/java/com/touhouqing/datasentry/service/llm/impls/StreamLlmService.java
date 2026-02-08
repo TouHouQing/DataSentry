@@ -15,6 +15,7 @@
  */
 package com.touhouqing.datasentry.service.llm.impls;
 
+import com.touhouqing.datasentry.cleaning.service.AiCostTrackingService;
 import com.touhouqing.datasentry.service.aimodelconfig.AiModelRegistry;
 import com.touhouqing.datasentry.service.llm.LlmService;
 import lombok.AllArgsConstructor;
@@ -25,20 +26,44 @@ import reactor.core.publisher.Flux;
 public class StreamLlmService implements LlmService {
 
 	private final AiModelRegistry registry;
+	private final AiCostTrackingService costTrackingService;
 
 	@Override
 	public Flux<ChatResponse> call(String system, String user) {
-		return registry.getChatClient().prompt().system(system).user(user).stream().chatResponse();
+		return registry.getChatClient()
+			.prompt()
+			.system(system)
+			.user(user)
+			.stream()
+			.chatResponse();
 	}
 
 	@Override
 	public Flux<ChatResponse> callSystem(String system) {
-		return registry.getChatClient().prompt().system(system).stream().chatResponse();
+		return registry.getChatClient()
+			.prompt()
+			.system(system)
+			.stream()
+			.chatResponse();
 	}
 
 	@Override
 	public Flux<ChatResponse> callUser(String user) {
-		return registry.getChatClient().prompt().user(user).stream().chatResponse();
+		return registry.getChatClient()
+			.prompt()
+			.user(user)
+			.stream()
+			.chatResponse();
+	}
+
+	private void trackCost(ChatResponse response) {
+		if (costTrackingService != null) {
+			try {
+				costTrackingService.trackChatCost(response);
+			} catch (Exception e) {
+				// ignore tracking errors
+			}
+		}
 	}
 
 }

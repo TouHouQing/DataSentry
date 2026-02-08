@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Connection;
@@ -457,7 +458,7 @@ public class CleaningBatchProcessor {
 				CleaningPricingService.DEFAULT_MODEL);
 		return pricing.inputPricePer1k()
 			.multiply(BigDecimal.valueOf(roughTokens))
-			.divide(BigDecimal.valueOf(1000L), 4, java.math.RoundingMode.HALF_UP);
+			.divide(BigDecimal.valueOf(1000L), 4, RoundingMode.HALF_UP);
 	}
 
 	private void backupAndWrite(Long runId, CleaningJob job, String pkJson, String pkColumn, String pkValue,
