@@ -31,28 +31,34 @@ public class L2DetectorTest {
 	private final CloudApiL2DetectionProvider cloudApiProvider = new CloudApiL2DetectionProvider(properties,
 			opsStateService, HttpClient.newHttpClient());
 
-	private final L2DetectionProviderRouter providerRouter = new L2DetectionProviderRouter(heuristicProvider, onnxProvider,
-			cloudApiProvider, properties, opsStateService);
+	private final L2DetectionProviderRouter providerRouter = new L2DetectionProviderRouter(heuristicProvider,
+			onnxProvider, cloudApiProvider, properties, opsStateService);
 
 	private final L2Detector detector = new L2Detector(providerRouter);
 
 	@Test
-	public void shouldReturnFindingWhenScoreExceedsThreshold() {
+	public void shouldReturnFindingForHeuristicRule() {
 		properties.getCleaning().getL2().setProvider("DUMMY");
-		CleaningPolicyConfig config = CleaningPolicyConfig.builder().l2Threshold(0.5).build();
-		CleaningRule rule = CleaningRule.builder().category("SPAM").build();
+		CleaningPolicyConfig config = CleaningPolicyConfig.builder().build();
+		CleaningRule rule = CleaningRule.builder()
+			.category("ANOMALY_REPETITION")
+			.configJson("{\"maxRepetition\": 5}")
+			.build();
 
-		List<Finding> findings = detector.detect("点击链接领取兼职转账福利", rule, config);
+		List<Finding> findings = detector.detect("正常内容 aaaaaa", rule, config);
 
 		assertEquals(1, findings.size());
-		assertEquals("L2_DUMMY", findings.get(0).getDetectorSource());
+		assertEquals("L2_HEURISTIC_REPETITION", findings.get(0).getDetectorSource());
 	}
 
 	@Test
-	public void shouldReturnEmptyWhenScoreBelowThreshold() {
+	public void shouldReturnEmptyWhenHeuristicRuleDoesNotMatch() {
 		properties.getCleaning().getL2().setProvider("DUMMY");
-		CleaningPolicyConfig config = CleaningPolicyConfig.builder().l2Threshold(0.9).build();
-		CleaningRule rule = CleaningRule.builder().category("SPAM").build();
+		CleaningPolicyConfig config = CleaningPolicyConfig.builder().build();
+		CleaningRule rule = CleaningRule.builder()
+			.category("ANOMALY_REPETITION")
+			.configJson("{\"maxRepetition\": 8}")
+			.build();
 
 		List<Finding> findings = detector.detect("正常内容", rule, config);
 

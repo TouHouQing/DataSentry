@@ -450,19 +450,15 @@
                   :step="0.1"
                 />
                 <div class="field-help">
-                  Shannon 熵阈值 (默认 4.8)。数值越高，允许的随机性越大；数值越低，越容易把随机乱码判定为异常。
+                  Shannon 熵阈值 (默认
+                  4.8)。数值越高，允许的随机性越大；数值越低，越容易把随机乱码判定为异常。
                 </div>
               </el-form-item>
             </template>
 
             <template v-else-if="ruleForm.l2Mode === 'REPETITION'">
               <el-form-item label="最大重复次数">
-                <el-input-number
-                  v-model="ruleForm.l2MaxRepetition"
-                  :min="1"
-                  :max="100"
-                  :step="1"
-                />
+                <el-input-number v-model="ruleForm.l2MaxRepetition" :min="1" :max="100" :step="1" />
                 <div class="field-help">
                   允许的最大重复字符数 (默认 10)。例如设为 5，则 "aaaaaa" (6个a) 会被判定为异常。
                 </div>

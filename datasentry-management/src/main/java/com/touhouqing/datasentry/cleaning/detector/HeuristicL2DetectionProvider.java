@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,9 +21,13 @@ import java.util.regex.Pattern;
 public class HeuristicL2DetectionProvider implements L2DetectionProvider {
 
 	private static final String ANOMALY_ENTROPY = "ANOMALY_ENTROPY";
+
 	private static final String ANOMALY_REPETITION = "ANOMALY_REPETITION";
+
 	private static final String L2_REGEX = "L2_REGEX";
+
 	private static final double DEFAULT_ENTROPY_THRESHOLD = 4.8;
+
 	private static final int DEFAULT_REPETITION_THRESHOLD = 10;
 
 	private final Map<Long, CachedRule> ruleCache = new ConcurrentHashMap<>();
@@ -47,7 +52,8 @@ public class HeuristicL2DetectionProvider implements L2DetectionProvider {
 			return detectRegex(text, rule);
 		}
 
-		// For other types, we still parse config per request for now (or could be optimized similarly)
+		// For other types, we still parse config per request for now (or could be
+		// optimized similarly)
 		Map<String, Object> ruleConfig = parseConfig(rule.getConfigJson());
 
 		if (ANOMALY_ENTROPY.equals(category)) {
@@ -163,12 +169,12 @@ public class HeuristicL2DetectionProvider implements L2DetectionProvider {
 	}
 
 	private List<Finding> detectRegex(String text, CleaningRule rule) {
-		CachedRule cached = ruleCache.get(rule.getId());
-		if (cached == null || !cached.version().equals(rule.getUpdatedTime())) {
+		Long ruleId = rule.getId();
+		CachedRule cached = ruleId == null ? null : ruleCache.get(ruleId);
+		if (cached == null || !Objects.equals(cached.version(), rule.getUpdatedTime())) {
 			Map<String, Object> config = parseConfig(rule.getConfigJson());
 			String patternStr = (String) config.get("pattern");
 			if (patternStr == null || patternStr.isBlank()) {
-				// Invalid config, cache a dummy or just return
 				return List.of();
 			}
 
@@ -189,7 +195,9 @@ public class HeuristicL2DetectionProvider implements L2DetectionProvider {
 			}
 
 			cached = new CachedRule(pattern, threshold, rule.getUpdatedTime());
-			ruleCache.put(rule.getId(), cached);
+			if (ruleId != null) {
+				ruleCache.put(ruleId, cached);
+			}
 		}
 
 		Matcher matcher = cached.pattern().matcher(text);
@@ -206,4 +214,5 @@ public class HeuristicL2DetectionProvider implements L2DetectionProvider {
 		}
 		return findings;
 	}
+
 }

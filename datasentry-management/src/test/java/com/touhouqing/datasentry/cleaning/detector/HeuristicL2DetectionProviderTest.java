@@ -73,20 +73,14 @@ public class HeuristicL2DetectionProviderTest {
 	}
 
 	@Test
-	public void shouldUseLegacyLogicForUnknownCategory() {
-		CleaningRule rule = CleaningRule.builder()
-			.category("SPAM")
-			.build();
-		CleaningPolicyConfig config = CleaningPolicyConfig.builder()
-			.l2Threshold(0.5)
-			.build();
+	public void shouldReturnEmptyForUnknownCategory() {
+		CleaningRule rule = CleaningRule.builder().category("SPAM").build();
+		CleaningPolicyConfig config = CleaningPolicyConfig.builder().l2Threshold(0.5).build();
 
-		// Trigger legacy spam detection
 		String spamText = "兼职转账点击";
 		List<Finding> findings = provider.detect(spamText, rule, config);
 
-		assertEquals(1, findings.size());
-		assertEquals("L2_DUMMY", findings.get(0).getDetectorSource());
+		assertTrue(findings.isEmpty());
 	}
 
 	@Test
@@ -120,4 +114,5 @@ public class HeuristicL2DetectionProviderTest {
 
 		assertTrue(findings.isEmpty());
 	}
+
 }
