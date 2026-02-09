@@ -28,7 +28,10 @@ public class L2DetectionProviderRouterTest {
 				new OnnxL2DetectionProvider(properties, opsStateService),
 				new CloudApiL2DetectionProvider(properties, opsStateService, HttpClient.newHttpClient()), properties,
 				opsStateService);
-		CleaningRule rule = CleaningRule.builder().category("RISK").build();
+		CleaningRule rule = CleaningRule.builder()
+			.category("L2_REGEX")
+			.configJson("{\"pattern\":\"兼职转账\",\"threshold\":0.9}")
+			.build();
 		List<Finding> findings = router.detect("点击链接领取兼职转账福利", rule,
 				CleaningPolicyConfig.builder().l2Threshold(0.5).build());
 		assertEquals(1, findings.size());
@@ -45,7 +48,10 @@ public class L2DetectionProviderRouterTest {
 				new OnnxL2DetectionProvider(properties, opsStateService),
 				new CloudApiL2DetectionProvider(properties, opsStateService, HttpClient.newHttpClient()), properties,
 				opsStateService);
-		CleaningRule rule = CleaningRule.builder().category("RISK").build();
+		CleaningRule rule = CleaningRule.builder()
+			.category("L2_REGEX")
+			.configJson("{\"pattern\":\"兼职转账\",\"threshold\":0.9}")
+			.build();
 		List<Finding> findings = router.detect("点击链接领取兼职转账福利", rule,
 				CleaningPolicyConfig.builder().l2Threshold(0.5).build());
 		assertEquals(1, findings.size());
@@ -62,7 +68,10 @@ public class L2DetectionProviderRouterTest {
 				new OnnxL2DetectionProvider(properties, opsStateService),
 				new CloudApiL2DetectionProvider(properties, opsStateService, HttpClient.newHttpClient()), properties,
 				opsStateService);
-		CleaningRule rule = CleaningRule.builder().category("RISK").build();
+		CleaningRule rule = CleaningRule.builder()
+			.category("L2_REGEX")
+			.configJson("{\"pattern\":\"兼职转账\",\"threshold\":0.9}")
+			.build();
 		List<Finding> findings = router.detect("点击链接领取兼职转账福利", rule,
 				CleaningPolicyConfig.builder().l2Threshold(0.5).build());
 		assertEquals(1, findings.size());
