@@ -17,11 +17,20 @@ package com.touhouqing.datasentry.service.llm;
 
 import com.touhouqing.datasentry.util.ChatResponseUtil;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import reactor.core.publisher.Flux;
 
 public interface LlmService {
 
 	Flux<ChatResponse> call(String system, String user);
+
+	default Flux<ChatResponse> call(String system, String user, ChatOptions options) {
+		return call(system, user);
+	}
+
+	default <T> T callForEntity(String system, String user, ChatOptions options, Class<T> entityType) {
+		throw new UnsupportedOperationException("Structured output is not supported");
+	}
 
 	Flux<ChatResponse> callSystem(String system);
 

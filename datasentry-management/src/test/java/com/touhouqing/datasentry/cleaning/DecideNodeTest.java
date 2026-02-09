@@ -25,6 +25,17 @@ public class DecideNodeTest {
 	}
 
 	@Test
+	public void reviewWhenL3AllParseFailedEvenIfNoFindings() {
+		DecideNode node = new DecideNode();
+		CleaningContext context = CleaningContext.builder().findings(List.of()).build();
+		context.getMetadata().put("l3AllParseFailed", true);
+
+		node.process(context);
+
+		assertEquals(CleaningVerdict.REVIEW, context.getVerdict());
+	}
+
+	@Test
 	public void blockWhenSeverityExceedsThreshold() {
 		DecideNode node = new DecideNode();
 		CleaningPolicyConfig config = CleaningPolicyConfig.builder().blockThreshold(0.7).reviewThreshold(0.4).build();

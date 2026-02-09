@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
@@ -47,6 +48,10 @@ public class AiModelRegistry {
 	// 缓存对象 (volatile 保证可见性)
 	private volatile ChatClient currentChatClient;
 
+	private volatile ChatModel currentChatModel;
+
+	private volatile String currentChatProvider;
+
 	private volatile EmbeddingModel currentEmbeddingModel;
 
 	// =========================================================
@@ -65,6 +70,8 @@ public class AiModelRegistry {
 							currentChatClient = ChatClient.builder(chatModel)
 								.defaultAdvisors(costTrackingAdvisor)
 								.build();
+							currentChatModel = chatModel;
+							currentChatProvider = config.getProvider();
 						}
 					}
 					catch (Exception e) {
@@ -80,6 +87,27 @@ public class AiModelRegistry {
 			}
 		}
 		return currentChatClient;
+	}
+
+	public boolean isDashScopeChatModel() {
+		if (currentChatClient == null) {
+			getChatClient();
+		}
+		return currentChatModel instanceof DashScopeChatModel;
+	}
+
+	public String getCurrentChatProvider() {
+		if (currentChatClient == null) {
+			getChatClient();
+		}
+		return currentChatProvider;
+	}
+
+	public ChatModel getChatModel() {
+		if (currentChatClient == null) {
+			getChatClient();
+		}
+		return currentChatModel;
 	}
 
 	// =========================================================
@@ -120,6 +148,8 @@ public class AiModelRegistry {
 
 	public void refreshChat() {
 		this.currentChatClient = null;
+		this.currentChatModel = null;
+		this.currentChatProvider = null;
 		log.info("Chat cache cleared.");
 	}
 

@@ -39,7 +39,8 @@ public class CleaningPolicyResolver {
 		}
 		List<CleaningPolicyRule> policyRules = policyRuleMapper
 			.selectList(new LambdaQueryWrapper<CleaningPolicyRule>().eq(CleaningPolicyRule::getPolicyId, policyId)
-				.orderByAsc(CleaningPolicyRule::getPriority));
+				.orderByDesc(CleaningPolicyRule::getPriority)
+				.orderByAsc(CleaningPolicyRule::getRuleId));
 		List<Long> ruleIds = policyRules.stream()
 			.map(CleaningPolicyRule::getRuleId)
 			.filter(Objects::nonNull)

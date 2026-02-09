@@ -15,6 +15,9 @@
  */
 package com.touhouqing.datasentry.service.aimodelconfig;
 
+import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.touhouqing.datasentry.dto.ModelConfigDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -35,16 +38,30 @@ import org.springframework.util.StringUtils;
 public class DynamicModelFactory {
 
 	/**
-	 * 统一使用 OpenAiChatModel，通过 baseUrl 实现多厂商兼容
+	 * 根据 provider 动态创建 ChatModel。
 	 */
 	public ChatModel createChatModel(ModelConfigDTO config) {
 
 		log.info("Creating NEW ChatModel instance. Provider: {}, Model: {}, BaseUrl: {}", config.getProvider(),
 				config.getModelName(), config.getBaseUrl());
-		// 1. 验证参数
 		checkBasic(config);
 
-		// 2. 构建 OpenAiApi (核心通讯对象)
+		if (isDashScopeProvider(config.getProvider())) {
+			String apiKey = StringUtils.hasText(config.getApiKey()) ? config.getApiKey() : "";
+			DashScopeApi.Builder apiBuilder = DashScopeApi.builder().apiKey(apiKey).baseUrl(config.getBaseUrl());
+			if (StringUtils.hasText(config.getCompletionsPath())) {
+				apiBuilder.completionsPath(config.getCompletionsPath());
+			}
+			DashScopeApi dashScopeApi = apiBuilder.build();
+			DashScopeChatOptions dashScopeChatOptions = DashScopeChatOptions.builder()
+				.model(config.getModelName())
+				.temperature(config.getTemperature())
+				.maxToken(config.getMaxTokens())
+				.stream(true)
+				.build();
+			return DashScopeChatModel.builder().dashScopeApi(dashScopeApi).defaultOptions(dashScopeChatOptions).build();
+		}
+
 		String apiKey = StringUtils.hasText(config.getApiKey()) ? config.getApiKey() : "";
 		OpenAiApi.Builder apiBuilder = OpenAiApi.builder().apiKey(apiKey).baseUrl(config.getBaseUrl());
 
@@ -53,15 +70,12 @@ public class DynamicModelFactory {
 		}
 		OpenAiApi openAiApi = apiBuilder.build();
 
-		// 3. 构建运行时选项 (设置默认的模型名称，如 "deepseek-chat" 或 "gpt-4")
 		OpenAiChatOptions openAiChatOptions = OpenAiChatOptions.builder()
 			.model(config.getModelName())
 			.temperature(config.getTemperature())
 			.maxTokens(config.getMaxTokens())
-			// 开启流式 Token 统计 (关键修复)
 			.streamUsage(true)
 			.build();
-		// 4. 返回统一的 OpenAiChatModel
 		return OpenAiChatModel.builder().openAiApi(openAiApi).defaultOptions(openAiChatOptions).build();
 	}
 
@@ -71,6 +85,14 @@ public class DynamicModelFactory {
 			Assert.hasText(config.getApiKey(), "apiKey must not be empty");
 		}
 		Assert.hasText(config.getModelName(), "modelName must not be empty");
+	}
+
+	private static boolean isDashScopeProvider(String provider) {
+		if (!StringUtils.hasText(provider)) {
+			return false;
+		}
+		return "dashscope".equalsIgnoreCase(provider) || "aliyun".equalsIgnoreCase(provider)
+				|| "tongyi".equalsIgnoreCase(provider) || "qwen".equalsIgnoreCase(provider);
 	}
 
 	/**

@@ -14,6 +14,14 @@ public class DecideNode implements PipelineNode {
 
 	@Override
 	public NodeResult process(CleaningContext context) {
+		if (isL3AllParseFailed(context)) {
+			context.setVerdict(CleaningVerdict.REVIEW);
+			log.warn(
+					"Cleaning decide runId={} column={} findings={} l3AllParseFailed=true verdict=REVIEW reason=L3_STRUCTURED_OUTPUT_PARSE_FAILED",
+					context.getJobRunId(), context.getColumnName(),
+					context.getFindings() != null ? context.getFindings().size() : 0);
+			return NodeResult.ok();
+		}
 		if (context.getFindings() == null || context.getFindings().isEmpty()) {
 			context.setVerdict(CleaningVerdict.ALLOW);
 			log.info("Cleaning decide runId={} column={} findings=0 verdict=ALLOW", context.getJobRunId(),
@@ -45,6 +53,14 @@ public class DecideNode implements PipelineNode {
 				context.getJobRunId(), context.getColumnName(), context.getFindings().size(), maxSeverity,
 				blockThreshold, reviewThreshold, context.getVerdict());
 		return NodeResult.ok();
+	}
+
+	private boolean isL3AllParseFailed(CleaningContext context) {
+		if (context.getFindings() != null && !context.getFindings().isEmpty()) {
+			return false;
+		}
+		Object value = context.getMetadata().get("l3AllParseFailed");
+		return value instanceof Boolean && (Boolean) value;
 	}
 
 }

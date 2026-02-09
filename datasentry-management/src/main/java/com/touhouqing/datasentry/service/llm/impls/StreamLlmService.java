@@ -19,7 +19,9 @@ import com.touhouqing.datasentry.cleaning.service.AiCostTrackingService;
 import com.touhouqing.datasentry.service.aimodelconfig.AiModelRegistry;
 import com.touhouqing.datasentry.service.llm.LlmService;
 import lombok.AllArgsConstructor;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import reactor.core.publisher.Flux;
 
 @AllArgsConstructor
@@ -31,7 +33,23 @@ public class StreamLlmService implements LlmService {
 
 	@Override
 	public Flux<ChatResponse> call(String system, String user) {
-		return registry.getChatClient().prompt().system(system).user(user).stream().chatResponse();
+		return call(system, user, null);
+	}
+
+	@Override
+	public Flux<ChatResponse> call(String system, String user, ChatOptions options) {
+		return applyOptions(registry.getChatClient().prompt(), options).system(system)
+			.user(user)
+			.stream()
+			.chatResponse();
+	}
+
+	@Override
+	public <T> T callForEntity(String system, String user, ChatOptions options, Class<T> entityType) {
+		return applyOptions(registry.getChatClient().prompt(), options).system(system)
+			.user(user)
+			.call()
+			.entity(entityType);
 	}
 
 	@Override
@@ -42,6 +60,14 @@ public class StreamLlmService implements LlmService {
 	@Override
 	public Flux<ChatResponse> callUser(String user) {
 		return registry.getChatClient().prompt().user(user).stream().chatResponse();
+	}
+
+	private ChatClient.ChatClientRequestSpec applyOptions(ChatClient.ChatClientRequestSpec requestSpec,
+			ChatOptions options) {
+		if (options != null && registry.isDashScopeChatModel()) {
+			return requestSpec.options(options);
+		}
+		return requestSpec;
 	}
 
 	private void trackCost(ChatResponse response) {

@@ -1,7 +1,7 @@
 package com.touhouqing.datasentry.cleaning.pipeline;
 
-import com.touhouqing.datasentry.cleaning.detector.LlmDetector;
 import com.touhouqing.datasentry.cleaning.detector.L2Detector;
+import com.touhouqing.datasentry.cleaning.detector.LlmDetector;
 import com.touhouqing.datasentry.cleaning.detector.RegexDetector;
 import com.touhouqing.datasentry.cleaning.enums.CleaningRuleType;
 import com.touhouqing.datasentry.cleaning.model.CleaningAllowlist;
@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,10 +41,19 @@ public class DetectNode implements PipelineNode {
 				: new CleaningPolicyConfig();
 		boolean disableL3 = isDisableL3(context);
 		List<CleaningRule> rules = snapshot != null ? snapshot.getRules() : List.of();
+		List<CleaningRule> llmRules = rules.stream()
+			.filter(rule -> CleaningRuleType.LLM.name().equalsIgnoreCase(rule.getRuleType()))
+			.toList();
+		boolean hasLlmRules = !llmRules.isEmpty();
+		boolean l3Enabled = policyConfig.resolvedLlmEnabled();
 		List<Finding> l1Findings = new ArrayList<>();
 		List<Finding> l2Findings = new ArrayList<>();
 		List<Finding> l3Findings = new ArrayList<>();
 		List<Finding> findings = new ArrayList<>();
+		int llmParseSuccessCount = 0;
+		int llmParseFailCount = 0;
+		int l3EmptyStructuredCount = 0;
+		Map<String, Integer> l3ModeCounts = new HashMap<>();
 		for (CleaningRule rule : rules) {
 			if (rule.getRuleType() == null) {
 				continue;
@@ -57,40 +67,61 @@ public class DetectNode implements PipelineNode {
 		}
 		findings.addAll(l1Findings);
 		findings.addAll(l2Findings);
-		boolean escalatedToL3 = !disableL3 && snapshot != null && snapshot.getConfig() != null
-				&& snapshot.getConfig().resolvedLlmEnabled()
-				&& shouldEscalateToL3(l1Findings, l2Findings, policyConfig);
-		if (escalatedToL3) {
-			List<CleaningRule> llmRules = rules.stream()
-				.filter(rule -> CleaningRuleType.LLM.name().equalsIgnoreCase(rule.getRuleType()))
-				.toList();
-
+		boolean legacyEscalatedToL3 = shouldEscalateToL3(l1Findings, l2Findings, policyConfig);
+		boolean runL3 = !disableL3 && l3Enabled && hasLlmRules;
+		context.getMetadata().put("l3Attempted", runL3);
+		if (runL3) {
 			for (CleaningRule rule : llmRules) {
 				String prompt = null;
 				try {
 					if (rule.getConfigJson() != null && !rule.getConfigJson().isBlank()) {
 						Map<String, Object> config = JsonUtil.getObjectMapper()
 							.readValue(rule.getConfigJson(), Map.class);
-						if (config.get("prompt") instanceof String) {
-							prompt = (String) config.get("prompt");
+						if (config.get("prompt") instanceof String configuredPrompt) {
+							prompt = configuredPrompt;
 						}
 					}
 				}
 				catch (Exception e) {
 					log.warn("Failed to parse LLM rule config: {}", rule.getId(), e);
 				}
-				l3Findings.addAll(llmDetector.detect(text, prompt));
+				LlmDetector.LlmDetectResult llmResult = llmDetector.detectStructured(text, prompt);
+				String mode = llmResult.mode() != null ? llmResult.mode() : "UNKNOWN";
+				l3ModeCounts.merge(mode, 1, Integer::sum);
+				int findingCount = llmResult.findings() != null ? llmResult.findings().size() : 0;
+				if (llmResult.parseSuccess()) {
+					llmParseSuccessCount++;
+					if (findingCount == 0) {
+						l3EmptyStructuredCount++;
+					}
+					l3Findings.addAll(llmResult.findings());
+				}
+				else {
+					llmParseFailCount++;
+				}
+				log.info(
+						"event=L3_RULE_RESULT runId={} column={} ruleId={} parseSuccess={} mode={} findings={} errorCode={}",
+						context.getJobRunId(), context.getColumnName(), rule.getId(), llmResult.parseSuccess(), mode,
+						findingCount, llmResult.errorCode());
 			}
 			findings.addAll(l3Findings);
 		}
+		boolean l3AllParseFailed = runL3 && llmParseSuccessCount == 0;
+		context.getMetadata().put("l3AllParseFailed", l3AllParseFailed);
+		context.getMetrics().put("l3RuleCount", llmRules.size());
+		context.getMetrics().put("l3ParseSuccessCount", llmParseSuccessCount);
+		context.getMetrics().put("l3ParseFailCount", llmParseFailCount);
+		context.getMetrics().put("l3EmptyStructuredCount", l3EmptyStructuredCount);
+		context.getMetrics().put("l3ModeCounts", l3ModeCounts);
 		List<CleaningAllowlist> allowlists = getAllowlists(context);
 		List<Finding> filteredFindings = CleaningAllowlistMatcher.filterFindings(text, findings, allowlists);
 		context.setFindings(filteredFindings);
 		log.info(
-				"Cleaning detect runId={} column={} rules={} l1={} l2={} l3={} total={} filtered={} allowlists={} escalatedToL3={} disableL3={}",
+				"Cleaning detect runId={} column={} rules={} l1={} l2={} l3={} total={} filtered={} allowlists={} hasLlmRules={} l3Enabled={} runL3={} l3ParseSuccess={} l3ParseFail={} l3EmptyStructured={} l3Modes={} l3AllParseFailed={} legacyEscalatedToL3={} disableL3={}",
 				context.getJobRunId(), context.getColumnName(), rules.size(), l1Findings.size(), l2Findings.size(),
-				l3Findings.size(), findings.size(), filteredFindings.size(), allowlists.size(), escalatedToL3,
-				disableL3);
+				l3Findings.size(), findings.size(), filteredFindings.size(), allowlists.size(), hasLlmRules, l3Enabled,
+				runL3, llmParseSuccessCount, llmParseFailCount, l3EmptyStructuredCount, l3ModeCounts, l3AllParseFailed,
+				legacyEscalatedToL3, disableL3);
 		return NodeResult.ok();
 	}
 

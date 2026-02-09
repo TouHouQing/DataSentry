@@ -19,7 +19,9 @@ import com.touhouqing.datasentry.cleaning.service.AiCostTrackingService;
 import com.touhouqing.datasentry.service.aimodelconfig.AiModelRegistry;
 import com.touhouqing.datasentry.service.llm.LlmService;
 import lombok.AllArgsConstructor;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -32,44 +34,48 @@ public class BlockLlmService implements LlmService {
 
 	@Override
 	public Flux<ChatResponse> call(String system, String user) {
-		return Mono.fromCallable(() -> {
-			ChatResponse response = registry.getChatClient().prompt().system(system).user(user).call().chatResponse();
-			return response;
-		}).flux();
+		return call(system, user, null);
+	}
+
+	@Override
+	public Flux<ChatResponse> call(String system, String user, ChatOptions options) {
+		return Mono
+			.fromCallable(() -> applyOptions(registry.getChatClient().prompt(), options).system(system)
+				.user(user)
+				.call()
+				.chatResponse())
+			.flux();
+	}
+
+	@Override
+	public <T> T callForEntity(String system, String user, ChatOptions options, Class<T> entityType) {
+		return applyOptions(registry.getChatClient().prompt(), options).system(system)
+			.user(user)
+			.call()
+			.entity(entityType);
 	}
 
 	@Override
 	public Flux<ChatResponse> callSystem(String system) {
-		return Mono.fromCallable(() -> {
-			ChatResponse response = registry.getChatClient().prompt().system(system).call().chatResponse();
-			return response;
-		}).flux();
+		return Mono.fromCallable(() -> registry.getChatClient().prompt().system(system).call().chatResponse()).flux();
 	}
 
 	@Override
 	public Flux<ChatResponse> callUser(String user) {
-		return Mono.fromCallable(() -> {
-			ChatResponse response = registry.getChatClient().prompt().user(user).call().chatResponse();
-			return response;
-		}).flux();
+		return Mono.fromCallable(() -> registry.getChatClient().prompt().user(user).call().chatResponse()).flux();
+	}
+
+	private ChatClient.ChatClientRequestSpec applyOptions(ChatClient.ChatClientRequestSpec requestSpec,
+			ChatOptions options) {
+		if (options != null && registry.isDashScopeChatModel()) {
+			return requestSpec.options(options);
+		}
+		return requestSpec;
 	}
 
 	private void trackCost(ChatResponse response) {
 		if (costTrackingService != null) {
-			// We can get threadId from the aspect's context holder since we set it in
-			// GraphServiceImpl
-			// Or we can rely on AiCostTrackingService to find the context if we refactor
-			// it to use the static holder
-			// For now, let's use a simpler approach: get the threadId from the Aspect's
-			// context
 			try {
-				// We need the threadId to track cost. Since GraphServiceImpl sets it in
-				// AiCostTrackingAspect's ThreadLocal,
-				// we can access it if we expose a getter, or we can just use the
-				// ThreadLocal in AiCostTrackingService directly.
-				// However, AiCostTrackingService currently relies on a map passed by
-				// threadId.
-				// Let's modify AiCostTrackingService to use the ThreadLocal context too.
 				costTrackingService.trackChatCost(response);
 			}
 			catch (Exception e) {
