@@ -119,6 +119,8 @@ public class DataSentryProperties {
 
 		private L2 l2 = new L2();
 
+		private L3 l3 = new L3();
+
 		private Notification notification = new Notification();
 
 		@Getter
@@ -299,6 +301,40 @@ public class DataSentryProperties {
 				private int connectTimeoutMs = 1000;
 
 			}
+
+		}
+
+		@Getter
+		@Setter
+		public static class L3 {
+
+			private String strategy = "BALANCED";
+
+			private int attemptTimeoutMs = 4500;
+
+			private int maxRuleConcurrency = 2;
+
+			private boolean enableAgentOutputtype = true;
+
+			private boolean enableChatEntity = true;
+
+			private boolean enableRawJson = true;
+
+			private long providerCapabilityCacheTtlMs = 300000;
+
+			private boolean batchEnabled = true;
+
+			private int batchSize = 12;
+
+			private int maxBatchConcurrency = 3;
+
+			private int batchTimeoutMs = 2800;
+
+			private int batchMaxTextLength = 256;
+
+			private int batchMaxPromptChars = 6000;
+
+			private String batchFailPolicy = "REVIEW_ALL";
 
 		}
 

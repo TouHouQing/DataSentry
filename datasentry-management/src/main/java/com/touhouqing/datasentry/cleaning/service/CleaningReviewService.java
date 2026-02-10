@@ -230,7 +230,7 @@ public class CleaningReviewService {
 		if (task == null) {
 			throw new InvalidInputException("Review task not found");
 		}
-		if ("BLOCK_ONLY".equals(task.getActionSuggested())) {
+		if ("BLOCK_ONLY".equals(task.getActionSuggested()) || "REVIEW_ONLY".equals(task.getActionSuggested())) {
 			updateStatus(task.getId(), CleaningReviewStatus.WRITTEN.name(), reviewer, reason);
 			appendReviewRecord(task, task.getActionSuggested());
 			return reviewTaskMapper.selectById(task.getId());

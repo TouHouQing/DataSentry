@@ -9,6 +9,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.pipeline.DetectNode;
+import com.touhouqing.datasentry.properties.DataSentryProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -27,7 +28,7 @@ public class DetectNodeFailClosedTest {
 		RegexDetector regexDetector = new StubRegexDetector(List.of());
 		L2Detector l2Detector = new StubL2Detector(List.of());
 		StubLlmDetector llmDetector = new StubLlmDetector(Map.of());
-		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector);
+		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector, new DataSentryProperties());
 
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder()
 			.config(CleaningPolicyConfig.builder().llmEnabled(true).build())
@@ -55,7 +56,9 @@ public class DetectNodeFailClosedTest {
 						List.of(Finding.builder().category("B").build(), Finding.builder().category("C").build()),
 						false, "CHAT_ENTITY"));
 		StubLlmDetector llmDetector = new StubLlmDetector(resultMap);
-		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector);
+		DataSentryProperties properties = new DataSentryProperties();
+		properties.getCleaning().getL3().setMaxRuleConcurrency(1);
+		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector, properties);
 
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder()
 			.config(CleaningPolicyConfig.builder().llmEnabled(true).build())
@@ -87,7 +90,7 @@ public class DetectNodeFailClosedTest {
 		resultMap.put("p50",
 				LlmDetector.LlmDetectResult.failure("CHAT_ENTITY_CALL_FAILED", null, "CHAT_ENTITY_CALL_FAILED"));
 		StubLlmDetector llmDetector = new StubLlmDetector(resultMap);
-		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector);
+		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector, new DataSentryProperties());
 
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder()
 			.config(CleaningPolicyConfig.builder().llmEnabled(true).build())
@@ -112,7 +115,7 @@ public class DetectNodeFailClosedTest {
 		resultMap.put("p100", LlmDetector.LlmDetectResult.success(List.of(), false, "AGENT_OUTPUTTYPE"));
 		resultMap.put("p50", LlmDetector.LlmDetectResult.success(List.of(), false, "CHAT_ENTITY"));
 		StubLlmDetector llmDetector = new StubLlmDetector(resultMap);
-		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector);
+		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector, new DataSentryProperties());
 
 		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder()
 			.config(CleaningPolicyConfig.builder().llmEnabled(true).build())
@@ -126,6 +129,35 @@ public class DetectNodeFailClosedTest {
 		assertFalse((Boolean) context.getMetadata().get("l3AllParseFailed"));
 		assertEquals(0, context.getFindings().size());
 		assertEquals(2, context.getMetrics().get("l3EmptyStructuredCount"));
+	}
+
+	@Test
+	public void shouldUsePrecomputedL3ResultsWhenProvided() {
+		RegexDetector regexDetector = new StubRegexDetector(List.of());
+		L2Detector l2Detector = new StubL2Detector(List.of());
+		StubLlmDetector llmDetector = new StubLlmDetector(Map.of());
+		DetectNode node = new DetectNode(regexDetector, l2Detector, llmDetector, new DataSentryProperties());
+
+		CleaningRule rule1 = CleaningRule.builder().id(101L).ruleType("LLM").configJson("{\"prompt\":\"p1\"}").build();
+		CleaningRule rule2 = CleaningRule.builder().id(102L).ruleType("LLM").configJson("{\"prompt\":\"p2\"}").build();
+		CleaningPolicySnapshot snapshot = CleaningPolicySnapshot.builder()
+			.config(CleaningPolicyConfig.builder().llmEnabled(true).build())
+			.rules(List.of(rule1, rule2))
+			.build();
+
+		CleaningContext context = CleaningContext.builder().originalText("abc").policySnapshot(snapshot).build();
+		Map<Long, LlmDetector.LlmDetectResult> precomputed = new HashMap<>();
+		precomputed.put(101L, LlmDetector.LlmDetectResult
+			.success(List.of(Finding.builder().category("A").severity(0.7).build()), false, "RAW_JSON_BATCH"));
+		precomputed.put(102L, LlmDetector.LlmDetectResult
+			.success(List.of(Finding.builder().category("B").severity(0.8).build()), false, "RAW_JSON_BATCH"));
+		context.getMetadata().put("precomputedL3Results", precomputed);
+
+		node.process(context);
+
+		assertEquals(0, llmDetector.calledPrompts.size());
+		assertEquals(2, context.getFindings().size());
+		assertFalse((Boolean) context.getMetadata().get("l3AllParseFailed"));
 	}
 
 	private static class StubRegexDetector extends RegexDetector {
@@ -166,7 +198,7 @@ public class DetectNodeFailClosedTest {
 		private final List<String> calledPrompts = new ArrayList<>();
 
 		StubLlmDetector(Map<String, LlmDetectResult> resultMap) {
-			super(null, null, null);
+			super(null, null, null, null);
 			this.resultMap = resultMap;
 		}
 

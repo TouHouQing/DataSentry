@@ -13,6 +13,8 @@ import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -52,34 +54,52 @@ public class CostTrackingAdvisor implements CallAdvisor, StreamAdvisor {
 
 	@Override
 	public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
-		// Capture context at assembly time (when .stream() is called)
 		AiCostContextHolder.RequestContext context = AiCostContextHolder.getContext();
 		String capturedThreadId = context != null ? context.threadId() : null;
-
 		if (capturedThreadId == null) {
-			log.warn("⚠️ CostTrackingAdvisor: No context captured at stream assembly time! Thread: {}",
+			log.debug("CostTrackingAdvisor stream: no context at assembly. thread={}",
 					Thread.currentThread().getName());
 		}
-		else {
-			log.info("✅ CostTrackingAdvisor: Captured threadId {} at stream assembly. Thread: {}", capturedThreadId,
-					Thread.currentThread().getName());
-		}
-
+		AtomicBoolean fallbackLogged = new AtomicBoolean(false);
+		AtomicBoolean tracked = new AtomicBoolean(false);
 		return chain.nextStream(request).doOnNext(response -> {
 			try {
+				if (tracked.get() || !hasUsage(response)) {
+					return;
+				}
 				if (capturedThreadId != null) {
 					costTrackingService.trackChatCost(capturedThreadId, response.chatResponse());
+					tracked.set(true);
+					return;
+				}
+				AiCostContextHolder.RequestContext runtimeContext = AiCostContextHolder.getContext();
+				if (runtimeContext != null && runtimeContext.threadId() != null) {
+					costTrackingService.trackChatCost(runtimeContext.threadId(), response.chatResponse());
+					tracked.set(true);
 				}
 				else {
-					log.warn("⚠️ CostTrackingAdvisor: Trying fallback tracking (no threadId). Thread: {}",
-							Thread.currentThread().getName());
+					if (fallbackLogged.compareAndSet(false, true)) {
+						log.debug("CostTrackingAdvisor stream: fallback tracking without threadId. thread={}",
+								Thread.currentThread().getName());
+					}
 					costTrackingService.trackChatCost(response.chatResponse());
+					tracked.set(true);
 				}
 			}
 			catch (Exception e) {
 				log.error("Failed to track cost in advisor (stream)", e);
 			}
 		});
+	}
+
+	private boolean hasUsage(ChatClientResponse response) {
+		if (response == null || response.chatResponse() == null || response.chatResponse().getMetadata() == null
+				|| response.chatResponse().getMetadata().getUsage() == null) {
+			return false;
+		}
+		Integer promptTokens = response.chatResponse().getMetadata().getUsage().getPromptTokens();
+		Integer completionTokens = response.chatResponse().getMetadata().getUsage().getCompletionTokens();
+		return (promptTokens != null && promptTokens > 0) || (completionTokens != null && completionTokens > 0);
 	}
 
 }

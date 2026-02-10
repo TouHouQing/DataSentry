@@ -6,6 +6,8 @@ import com.touhouqing.datasentry.cleaning.model.NodeResult;
 import com.touhouqing.datasentry.cleaning.util.CleaningSanitizer;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+
 @Component
 public class SanitizeNode implements PipelineNode {
 
@@ -28,6 +30,7 @@ public class SanitizeNode implements PipelineNode {
 		}
 		String sanitized = CleaningSanitizer.sanitize(context.getOriginalText(), context.getFindings());
 		context.setSanitizedText(sanitized);
+		boolean changed = !Objects.equals(sanitized, context.getOriginalText());
 
 		// Resolve high-risk sanitization mode
 		String mode = "MITIGATE";
@@ -41,7 +44,7 @@ public class SanitizeNode implements PipelineNode {
 		if ("QUARANTINE".equalsIgnoreCase(mode) && context.getVerdict() == CleaningVerdict.BLOCK) {
 			// Keep BLOCK verdict - risk is contained but writeback is prevented
 		}
-		else {
+		else if (changed) {
 			// In MITIGATE mode, or for non-BLOCK verdicts, we consider the risk mitigated
 			context.setVerdict(CleaningVerdict.REDACTED);
 		}

@@ -27,7 +27,7 @@ spring:
           table-similarity-threshold: 0.2
           default-topk-limit: 8
           default-similarity-threshold: 0.4
-        llm-service-type: stream
+        llm-service-type: block
         code-executor:
           # 运行Python代码的环境（生产环境建议使用docker，不建议使用local）
           code-pool-executor: local
@@ -80,6 +80,21 @@ spring:
               model: ''
               timeout-ms: 3000
               connect-timeout-ms: 1000
+          l3:
+            strategy: BALANCED
+            attempt-timeout-ms: 4500
+            max-rule-concurrency: 2
+            enable-agent-outputtype: true
+            enable-chat-entity: true
+            enable-raw-json: true
+            provider-capability-cache-ttl-ms: 300000
+            batch-enabled: true
+            batch-size: 12
+            max-batch-concurrency: 3
+            batch-timeout-ms: 2800
+            batch-max-text-length: 256
+            batch-max-prompt-chars: 6000
+            batch-fail-policy: REVIEW_ALL
           pricing:
             sync-enabled: true
             sync-interval-ms: 1800000

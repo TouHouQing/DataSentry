@@ -1,5 +1,6 @@
 package com.touhouqing.datasentry.cleaning.pipeline;
 
+import com.touhouqing.datasentry.cleaning.context.AiCostContextHolder;
 import com.touhouqing.datasentry.cleaning.detector.L2Detector;
 import com.touhouqing.datasentry.cleaning.detector.LlmDetector;
 import com.touhouqing.datasentry.cleaning.detector.RegexDetector;
@@ -11,6 +12,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.model.NodeResult;
+import com.touhouqing.datasentry.properties.DataSentryProperties;
 import com.touhouqing.datasentry.cleaning.util.CleaningAllowlistMatcher;
 import com.touhouqing.datasentry.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @Component
 @Slf4j
@@ -32,6 +39,8 @@ public class DetectNode implements PipelineNode {
 	private final L2Detector l2Detector;
 
 	private final LlmDetector llmDetector;
+
+	private final DataSentryProperties dataSentryProperties;
 
 	@Override
 	public NodeResult process(CleaningContext context) {
@@ -71,21 +80,9 @@ public class DetectNode implements PipelineNode {
 		boolean runL3 = !disableL3 && l3Enabled && hasLlmRules;
 		context.getMetadata().put("l3Attempted", runL3);
 		if (runL3) {
-			for (CleaningRule rule : llmRules) {
-				String prompt = null;
-				try {
-					if (rule.getConfigJson() != null && !rule.getConfigJson().isBlank()) {
-						Map<String, Object> config = JsonUtil.getObjectMapper()
-							.readValue(rule.getConfigJson(), Map.class);
-						if (config.get("prompt") instanceof String configuredPrompt) {
-							prompt = configuredPrompt;
-						}
-					}
-				}
-				catch (Exception e) {
-					log.warn("Failed to parse LLM rule config: {}", rule.getId(), e);
-				}
-				LlmDetector.LlmDetectResult llmResult = llmDetector.detectStructured(text, prompt);
+			List<L3RuleResult> ruleResults = resolvePrecomputedOrDetect(context, text, llmRules);
+			for (L3RuleResult ruleResult : ruleResults) {
+				LlmDetector.LlmDetectResult llmResult = ruleResult.result();
 				String mode = llmResult.mode() != null ? llmResult.mode() : "UNKNOWN";
 				l3ModeCounts.merge(mode, 1, Integer::sum);
 				int findingCount = llmResult.findings() != null ? llmResult.findings().size() : 0;
@@ -101,8 +98,8 @@ public class DetectNode implements PipelineNode {
 				}
 				log.info(
 						"event=L3_RULE_RESULT runId={} column={} ruleId={} parseSuccess={} mode={} findings={} errorCode={}",
-						context.getJobRunId(), context.getColumnName(), rule.getId(), llmResult.parseSuccess(), mode,
-						findingCount, llmResult.errorCode());
+						context.getJobRunId(), context.getColumnName(), ruleResult.ruleId(), llmResult.parseSuccess(),
+						mode, findingCount, llmResult.errorCode());
 			}
 			findings.addAll(l3Findings);
 		}
@@ -123,6 +120,33 @@ public class DetectNode implements PipelineNode {
 				runL3, llmParseSuccessCount, llmParseFailCount, l3EmptyStructuredCount, l3ModeCounts, l3AllParseFailed,
 				legacyEscalatedToL3, disableL3);
 		return NodeResult.ok();
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<L3RuleResult> resolvePrecomputedOrDetect(CleaningContext context, String text,
+			List<CleaningRule> llmRules) {
+		Object precomputedObject = context.getMetadata().get("precomputedL3Results");
+		if (!(precomputedObject instanceof Map<?, ?> precomputedMap) || llmRules == null || llmRules.isEmpty()) {
+			return detectL3RuleResults(context, text, llmRules);
+		}
+		List<L3RuleResult> results = new ArrayList<>();
+		for (CleaningRule rule : llmRules) {
+			Long ruleId = rule != null ? rule.getId() : null;
+			if (ruleId == null) {
+				continue;
+			}
+			Object ruleResultObject = precomputedMap.get(ruleId);
+			if (!(ruleResultObject instanceof LlmDetector.LlmDetectResult llmResult)) {
+				results.add(new L3RuleResult(ruleId,
+						LlmDetector.LlmDetectResult.failure("L3_PRECOMPUTED_MISSING", null, "L3_PRECOMPUTED_MISSING")));
+				continue;
+			}
+			results.add(new L3RuleResult(ruleId, llmResult));
+		}
+		if (!results.isEmpty()) {
+			return results;
+		}
+		return detectL3RuleResults(context, text, llmRules);
 	}
 
 	private boolean shouldEscalateToL3(List<Finding> l1Findings, List<Finding> l2Findings,
@@ -155,6 +179,108 @@ public class DetectNode implements PipelineNode {
 			return (List<CleaningAllowlist>) value;
 		}
 		return List.of();
+	}
+
+	private List<L3RuleResult> detectL3RuleResults(CleaningContext context, String text, List<CleaningRule> llmRules) {
+		if (llmRules == null || llmRules.isEmpty()) {
+			return List.of();
+		}
+		int configuredConcurrency = 1;
+		if (dataSentryProperties != null && dataSentryProperties.getCleaning() != null
+				&& dataSentryProperties.getCleaning().getL3() != null) {
+			configuredConcurrency = dataSentryProperties.getCleaning().getL3().getMaxRuleConcurrency();
+		}
+		int concurrency = Math.max(1, Math.min(configuredConcurrency, llmRules.size()));
+		if (concurrency == 1) {
+			List<L3RuleResult> serialResults = new ArrayList<>();
+			for (CleaningRule rule : llmRules) {
+				serialResults.add(callSingleRule(context, text, rule));
+			}
+			return serialResults;
+		}
+		ExecutorService executor = Executors.newFixedThreadPool(concurrency);
+		try {
+			List<Future<L3RuleResult>> futures = new ArrayList<>();
+			for (CleaningRule rule : llmRules) {
+				Callable<L3RuleResult> callable = () -> callSingleRule(context, text, rule);
+				futures.add(executor.submit(callable));
+			}
+			List<L3RuleResult> results = new ArrayList<>();
+			for (Future<L3RuleResult> future : futures) {
+				try {
+					results.add(future.get());
+				}
+				catch (ExecutionException e) {
+					Throwable cause = e.getCause() != null ? e.getCause() : e;
+					log.warn("Failed to execute L3 rule", cause);
+					results.add(new L3RuleResult(null, LlmDetector.LlmDetectResult.failure("L3_RULE_EXECUTION_FAILED",
+							null, "L3_RULE_EXECUTION_FAILED")));
+				}
+				catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					results.add(new L3RuleResult(null,
+							LlmDetector.LlmDetectResult.failure("L3_RULE_INTERRUPTED", null, "L3_RULE_INTERRUPTED")));
+				}
+			}
+			return results;
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	private L3RuleResult callSingleRule(CleaningContext context, String text, CleaningRule rule) {
+		String prompt = resolvePrompt(rule);
+		boolean contextBound = false;
+		try {
+			String traceId = resolveTraceId(context);
+			Long agentId = context != null ? context.getAgentId() : null;
+			if (traceId != null && agentId != null) {
+				AiCostContextHolder.setContext(traceId, agentId);
+				contextBound = true;
+			}
+			LlmDetector.LlmDetectResult llmResult = llmDetector.detectStructured(text, prompt);
+			return new L3RuleResult(rule != null ? rule.getId() : null, llmResult);
+		}
+		finally {
+			if (contextBound) {
+				AiCostContextHolder.clearContext();
+			}
+		}
+	}
+
+	private String resolveTraceId(CleaningContext context) {
+		if (context == null) {
+			return null;
+		}
+		String traceId = context.getTraceId();
+		if (traceId != null && !traceId.isBlank()) {
+			return traceId;
+		}
+		Long runId = context.getJobRunId();
+		if (runId != null) {
+			return String.valueOf(runId);
+		}
+		return null;
+	}
+
+	private String resolvePrompt(CleaningRule rule) {
+		if (rule == null || rule.getConfigJson() == null || rule.getConfigJson().isBlank()) {
+			return null;
+		}
+		try {
+			Map<String, Object> config = JsonUtil.getObjectMapper().readValue(rule.getConfigJson(), Map.class);
+			if (config.get("prompt") instanceof String configuredPrompt) {
+				return configuredPrompt;
+			}
+		}
+		catch (Exception e) {
+			log.warn("Failed to parse LLM rule config: {}", rule.getId(), e);
+		}
+		return null;
+	}
+
+	private record L3RuleResult(Long ruleId, LlmDetector.LlmDetectResult result) {
 	}
 
 }

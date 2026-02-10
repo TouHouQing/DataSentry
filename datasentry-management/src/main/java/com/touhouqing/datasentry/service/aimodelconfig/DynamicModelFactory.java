@@ -29,9 +29,12 @@ import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+
+import java.time.Duration;
 
 @Slf4j
 @Service
@@ -76,7 +79,20 @@ public class DynamicModelFactory {
 			.maxTokens(config.getMaxTokens())
 			.streamUsage(true)
 			.build();
-		return OpenAiChatModel.builder().openAiApi(openAiApi).defaultOptions(openAiChatOptions).build();
+		return OpenAiChatModel.builder()
+			.openAiApi(openAiApi)
+			.defaultOptions(openAiChatOptions)
+			.retryTemplate(buildLowLatencyRetryTemplate())
+			.build();
+	}
+
+	private RetryTemplate buildLowLatencyRetryTemplate() {
+		return RetryTemplate.builder()
+			.maxAttempts(2)
+			.retryOn(org.springframework.ai.retry.TransientAiException.class)
+			.retryOn(org.springframework.web.client.ResourceAccessException.class)
+			.fixedBackoff(Duration.ofMillis(300))
+			.build();
 	}
 
 	private static void checkBasic(ModelConfigDTO config) {

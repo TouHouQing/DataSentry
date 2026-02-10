@@ -1,5 +1,6 @@
 package com.touhouqing.datasentry.cleaning.service;
 
+import com.touhouqing.datasentry.cleaning.detector.LlmDetector;
 import com.touhouqing.datasentry.cleaning.enums.CleaningJobMode;
 import com.touhouqing.datasentry.cleaning.enums.CleaningBudgetStatus;
 import com.touhouqing.datasentry.cleaning.enums.CleaningCostChannel;
@@ -18,6 +19,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningContext;
 import com.touhouqing.datasentry.cleaning.model.CleaningJob;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
+import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.CleaningRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.model.Finding;
@@ -53,6 +55,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -61,6 +67,8 @@ import java.util.stream.Collectors;
 public class CleaningBatchProcessor {
 
 	private static final String REVIEW_BLOCK_ON_RISK_KEY = "reviewBlockOnRisk";
+
+	private static final long PROGRESS_FLUSH_INTERVAL_MS = 5000L;
 
 	private final CleaningJobMapper jobMapper;
 
@@ -97,6 +105,8 @@ public class CleaningBatchProcessor {
 	private final CleaningNotificationService notificationService;
 
 	private final CleaningJsonPathProcessor jsonPathProcessor;
+
+	private final LlmDetector llmDetector;
 
 	private final DataSentryProperties dataSentryProperties;
 
@@ -135,9 +145,10 @@ public class CleaningBatchProcessor {
 		List<String> selectColumns = preflight.selectColumns();
 		boolean sanitizeRequested = preflight.sanitizeRequested();
 		log.info(
-				"Cleaning batch start runId={} jobId={} policyId={} policyName={} rules={} targetColumns={} jsonPathMappings={} allowlists={} writebackMode={} reviewPolicy={} sanitizeRequested={}",
+				"Cleaning batch start runId={} jobId={} policyId={} policyName={} rules={} targetColumns={} jsonPathMappings={} allowlists={} mode={} writebackMode={} reviewPolicy={} sanitizeRequested={}",
 				run.getId(), job.getId(), snapshotPolicyId, snapshotPolicyName, ruleCount, targetColumns,
-				jsonPathMappings, allowlists.size(), job.getWritebackMode(), job.getReviewPolicy(), sanitizeRequested);
+				jsonPathMappings, allowlists.size(), job.getMode(), job.getWritebackMode(), job.getReviewPolicy(),
+				sanitizeRequested);
 		Long totalScanned = defaultLong(run.getTotalScanned());
 		Long totalFlagged = defaultLong(run.getTotalFlagged());
 		Long totalWritten = defaultLong(run.getTotalWritten());
@@ -155,6 +166,7 @@ public class CleaningBatchProcessor {
 			DatabaseDialectEnum dialect = resolveDialect(connection);
 			Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta = CleaningWritebackValidator
 				.loadColumnMeta(connection, job.getTableName());
+			long lastProgressFlushTimeMs = System.currentTimeMillis();
 			while (true) {
 				CleaningJobRun latestRun = jobRunMapper.selectById(run.getId());
 				if (latestRun == null) {
@@ -171,7 +183,18 @@ public class CleaningBatchProcessor {
 				}
 				log.info("Cleaning batch chunk runId={} fetchedRows={} lastPk={} batchSize={}", run.getId(),
 						rows.size(), lastPk, resolveBatchSize(job));
+				Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> precomputedL3ByPkAndColumn = precomputeChunkL3(
+						run.getId(), job, snapshot, rows, pkColumn, targetColumns, jsonPathMappings);
 				for (Map<String, String> row : rows) {
+					CleaningJobRun latestBeforeRow = jobRunMapper.selectById(run.getId());
+					if (latestBeforeRow == null) {
+						return;
+					}
+					if (!CleaningJobRunStatus.RUNNING.name().equals(latestBeforeRow.getStatus())) {
+						log.info("Cleaning batch stop runId={} reason=STATUS_CHANGED status={} lastPk={}", run.getId(),
+								latestBeforeRow.getStatus(), lastPk);
+						return;
+					}
 					String pkValue = row.get(pkColumn);
 					if (pkValue == null) {
 						totalFailed++;
@@ -180,7 +203,7 @@ public class CleaningBatchProcessor {
 					String pkJson = toJsonSafe(Map.of(pkColumn, pkValue));
 					RowProcessResult rowResult = processRow(run.getId(), job, snapshot, allowlists, sanitizeRequested,
 							pkJson, pkColumn, pkValue, row, targetColumns, updateMapping, softDeleteMapping, columnMeta,
-							jsonPathMappings, connection);
+							jsonPathMappings, precomputedL3ByPkAndColumn.get(pkValue), connection);
 					actualCost = actualCost.add(rowResult.costAmount());
 					totalScanned++;
 					if (rowResult.flagged()) {
@@ -211,6 +234,19 @@ public class CleaningBatchProcessor {
 										"budgetHardLimit", job.getBudgetHardLimit()));
 						return;
 					}
+					long nowMs = System.currentTimeMillis();
+					if (nowMs - lastProgressFlushTimeMs >= PROGRESS_FLUSH_INTERVAL_MS) {
+						LocalDateTime progressTime = LocalDateTime.now();
+						LocalDateTime leaseUntil = progressTime
+							.plusSeconds(dataSentryProperties.getCleaning().getBatch().getLeaseSeconds());
+						CleaningBudgetStatus status = budgetService.evaluate(job, actualCost);
+						String budgetMessage = status == CleaningBudgetStatus.SOFT_EXCEEDED ? "预算达到软阈值" : null;
+						jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPk), totalScanned,
+								totalFlagged, totalWritten, totalFailed, actualCost, status.name(), budgetMessage,
+								progressTime, leaseUntil);
+						jobRunMapper.heartbeat(run.getId(), leaseOwner, leaseUntil, progressTime);
+						lastProgressFlushTimeMs = nowMs;
+					}
 				}
 				LocalDateTime heartbeatTime = LocalDateTime.now();
 				LocalDateTime leaseUntil = heartbeatTime
@@ -236,7 +272,8 @@ public class CleaningBatchProcessor {
 			List<CleaningAllowlist> allowlists, boolean sanitizeRequested, String pkJson, String pkColumn,
 			String pkValue, Map<String, String> row, List<String> targetColumns, Map<String, String> updateMapping,
 			Map<String, Object> softDeleteMapping, Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta,
-			Map<String, String> jsonPathMappings, Connection connection) {
+			Map<String, String> jsonPathMappings,
+			Map<String, Map<Long, LlmDetector.LlmDetectResult>> precomputedL3ByColumnAndRule, Connection connection) {
 		try {
 			BigDecimal rowCost = BigDecimal.ZERO;
 			boolean writebackEnabled = CleaningJobMode.WRITEBACK.name().equalsIgnoreCase(job.getMode());
@@ -285,6 +322,11 @@ public class CleaningBatchProcessor {
 					.build();
 				context.getMetadata().put("allowlists", allowlists);
 				context.getMetadata().put("skipAudit", true);
+				Map<Long, LlmDetector.LlmDetectResult> precomputedL3ByRule = precomputedL3ByColumnAndRule != null
+						? precomputedL3ByColumnAndRule.get(column) : null;
+				if (precomputedL3ByRule != null && !precomputedL3ByRule.isEmpty()) {
+					context.getMetadata().put("precomputedL3Results", precomputedL3ByRule);
+				}
 				context.getMetrics().put("startTimeMs", System.currentTimeMillis());
 				CleaningContext result = pipeline.execute(context, sanitizeRequested);
 				contextByColumn.put(column, result);
@@ -299,17 +341,20 @@ public class CleaningBatchProcessor {
 				boolean softDeleteCandidate = writebackEnabled && writebackMode == CleaningWritebackMode.SOFT_DELETE
 						&& result.getVerdict() != null && (result.getVerdict().name().equals("BLOCK")
 								|| result.getVerdict().name().equals("REDACTED"));
-				boolean reviewRequired = isReviewRequired(reviewPolicy, reviewBlockOnRisk,
-						result.getVerdict() != null ? result.getVerdict().name() : null);
-				boolean blockReviewCandidate = reviewRequired && result.getVerdict() != null
-						&& "BLOCK".equals(result.getVerdict().name());
-				if (reviewRequired && (updateCandidate || softDeleteCandidate || blockReviewCandidate)) {
+				String verdict = result.getVerdict() != null ? result.getVerdict().name() : null;
+				boolean reviewRequired = isReviewRequired(reviewPolicy, reviewBlockOnRisk, verdict);
+				boolean blockReviewCandidate = reviewRequired && "BLOCK".equals(verdict);
+				boolean reviewOnlyCandidate = reviewRequired && verdict != null && !"ALLOW".equals(verdict)
+						&& !updateCandidate && !softDeleteCandidate && !blockReviewCandidate;
+				if (reviewRequired
+						&& (updateCandidate || softDeleteCandidate || blockReviewCandidate || reviewOnlyCandidate)) {
 					reviewPendingColumns.add(column);
 					if (softDeleteCandidate) {
 						softDeleteReviewRequired = true;
 					}
 					CleaningReviewTask task = buildReviewTask(runId, job, pkJson, column, result, updateCandidate,
-							softDeleteCandidate, blockReviewCandidate, updateMapping, softDeleteMapping, row);
+							softDeleteCandidate, blockReviewCandidate, reviewOnlyCandidate, updateMapping,
+							softDeleteMapping, row);
 					if (task != null) {
 						reviewTasks.add(task);
 					}
@@ -414,6 +459,167 @@ public class CleaningBatchProcessor {
 					Map.of("pkColumn", pkColumn, "pkValue", pkValue, "targetColumns", targetColumns), e);
 			return new RowProcessResult(false, false, true, BigDecimal.ZERO);
 		}
+	}
+
+	private Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> precomputeChunkL3(Long runId,
+			CleaningJob job, CleaningPolicySnapshot snapshot, List<Map<String, String>> rows, String pkColumn,
+			List<String> targetColumns, Map<String, String> jsonPathMappings) {
+		if (!isBatchL3Enabled(snapshot, rows, targetColumns)) {
+			return Map.of();
+		}
+		List<CleaningRule> llmRules = resolveEnabledLlmRules(snapshot);
+		if (llmRules.isEmpty()) {
+			return Map.of();
+		}
+		int chunkBatchSize = resolveL3BatchSize();
+		Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> result = new ConcurrentHashMap<>();
+		List<L3BatchGroup> groups = buildL3BatchGroups(rows, pkColumn, targetColumns, jsonPathMappings, llmRules,
+				chunkBatchSize);
+		if (groups.isEmpty()) {
+			return Map.of();
+		}
+		int maxConcurrency = Math.max(1, dataSentryProperties.getCleaning().getL3().getMaxBatchConcurrency());
+		ExecutorService executor = Executors.newFixedThreadPool(maxConcurrency);
+		try {
+			List<CompletableFuture<Void>> futures = new ArrayList<>();
+			for (L3BatchGroup group : groups) {
+				CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+					LlmDetector.BatchDetectResult batchResult;
+					try {
+						batchResult = llmDetector.detectStructuredBatch(group.inputs(), group.prompt());
+					}
+					catch (Exception ex) {
+						batchResult = LlmDetector.BatchDetectResult.failure(Map.of(), "L3_BATCH_CALL_FAILED",
+								"L3_BATCH_CALL_FAILED");
+					}
+					for (L3ItemRef itemRef : group.itemRefs()) {
+						LlmDetector.LlmDetectResult itemResult = batchResult.results().get(itemRef.itemId());
+						if (itemResult == null) {
+							String mode = batchResult.mode() != null ? batchResult.mode() : "L3_BATCH_FAILED";
+							itemResult = LlmDetector.LlmDetectResult.failure(
+									batchResult.errorCode() != null ? batchResult.errorCode() : "L3_BATCH_FAILED", null,
+									mode);
+						}
+						result.computeIfAbsent(itemRef.pkValue(), key -> new ConcurrentHashMap<>())
+							.computeIfAbsent(group.column(), key -> new ConcurrentHashMap<>())
+							.put(group.ruleId(), itemResult);
+					}
+					log.info(
+							"Cleaning L3 batch runId={} column={} ruleId={} size={} parseSuccess={} mode={} errorCode={}",
+							runId, group.column(), group.ruleId(), group.inputs().size(), batchResult.parseSuccess(),
+							batchResult.mode(), batchResult.errorCode());
+				}, executor);
+				futures.add(future);
+			}
+			CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+		}
+		finally {
+			executor.shutdownNow();
+		}
+		return result;
+	}
+
+	private boolean isBatchL3Enabled(CleaningPolicySnapshot snapshot, List<Map<String, String>> rows,
+			List<String> targetColumns) {
+		if (snapshot == null || snapshot.getConfig() == null || !snapshot.getConfig().resolvedLlmEnabled()) {
+			return false;
+		}
+		if (rows == null || rows.isEmpty() || targetColumns == null || targetColumns.isEmpty()) {
+			return false;
+		}
+		return dataSentryProperties.getCleaning().getL3().isBatchEnabled();
+	}
+
+	private List<CleaningRule> resolveEnabledLlmRules(CleaningPolicySnapshot snapshot) {
+		if (snapshot == null || snapshot.getRules() == null || snapshot.getRules().isEmpty()) {
+			return List.of();
+		}
+		List<CleaningRule> llmRules = new ArrayList<>();
+		for (CleaningRule rule : snapshot.getRules()) {
+			if (rule == null || rule.getId() == null || rule.getRuleType() == null) {
+				continue;
+			}
+			if (!"LLM".equalsIgnoreCase(rule.getRuleType())) {
+				continue;
+			}
+			if (rule.getEnabled() != null && rule.getEnabled() == 0) {
+				continue;
+			}
+			llmRules.add(rule);
+		}
+		return llmRules;
+	}
+
+	private int resolveL3BatchSize() {
+		int configured = dataSentryProperties.getCleaning().getL3().getBatchSize();
+		return Math.max(configured, 1);
+	}
+
+	private List<L3BatchGroup> buildL3BatchGroups(List<Map<String, String>> rows, String pkColumn,
+			List<String> targetColumns, Map<String, String> jsonPathMappings, List<CleaningRule> llmRules,
+			int batchSize) {
+		List<L3BatchGroup> groups = new ArrayList<>();
+		for (String column : targetColumns) {
+			for (CleaningRule rule : llmRules) {
+				String prompt = resolveLlmRulePrompt(rule);
+				List<L3ItemRef> refs = new ArrayList<>();
+				for (Map<String, String> row : rows) {
+					String pkValue = resolvePkValue(row, pkColumn);
+					if (pkValue == null) {
+						continue;
+					}
+					String rawValue = row.get(column);
+					if (rawValue == null || rawValue.isBlank()) {
+						continue;
+					}
+					String sourceText = resolveSourceText(column, rawValue, jsonPathMappings);
+					if (sourceText == null || sourceText.isBlank()) {
+						continue;
+					}
+					String itemId = buildBatchItemId(pkValue, column, rule.getId());
+					refs.add(new L3ItemRef(itemId, pkValue, sourceText));
+				}
+				if (refs.isEmpty()) {
+					continue;
+				}
+				for (int start = 0; start < refs.size(); start += batchSize) {
+					int end = Math.min(start + batchSize, refs.size());
+					List<L3ItemRef> window = refs.subList(start, end);
+					List<LlmDetector.BatchInput> inputs = window.stream()
+						.map(item -> new LlmDetector.BatchInput(item.itemId(), item.text()))
+						.toList();
+					groups.add(new L3BatchGroup(column, rule.getId(), prompt, inputs, new ArrayList<>(window)));
+				}
+			}
+		}
+		return groups;
+	}
+
+	private String resolvePkValue(Map<String, String> row, String pkColumn) {
+		if (row == null || row.isEmpty()) {
+			return null;
+		}
+		return row.get(pkColumn);
+	}
+
+	private String buildBatchItemId(String pkValue, String column, Long ruleId) {
+		return pkValue + "|" + column + "|" + ruleId;
+	}
+
+	private String resolveLlmRulePrompt(CleaningRule rule) {
+		if (rule == null || rule.getConfigJson() == null || rule.getConfigJson().isBlank()) {
+			return null;
+		}
+		try {
+			Map<String, Object> config = JsonUtil.getObjectMapper().readValue(rule.getConfigJson(), Map.class);
+			if (config.get("prompt") instanceof String configuredPrompt) {
+				return configuredPrompt;
+			}
+		}
+		catch (Exception e) {
+			log.warn("Failed to parse LLM rule config: {}", rule.getId(), e);
+		}
+		return null;
 	}
 
 	private String resolveSourceText(String column, String rawValue, Map<String, String> jsonPathMappings) {
@@ -727,7 +933,8 @@ public class CleaningBatchProcessor {
 
 	private CleaningReviewTask buildReviewTask(Long runId, CleaningJob job, String pkJson, String column,
 			CleaningContext context, boolean updateCandidate, boolean softDeleteCandidate, boolean blockReviewCandidate,
-			Map<String, String> updateMapping, Map<String, Object> softDeleteMapping, Map<String, String> row) {
+			boolean reviewOnlyCandidate, Map<String, String> updateMapping, Map<String, Object> softDeleteMapping,
+			Map<String, String> row) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		Map<String, Object> beforeRow = new LinkedHashMap<>();
 		String actionSuggested = null;
@@ -751,8 +958,12 @@ public class CleaningBatchProcessor {
 			actionSuggested = "BLOCK_ONLY";
 			beforeRow.put(column, row.get(column));
 		}
+		else if (reviewOnlyCandidate) {
+			actionSuggested = "REVIEW_ONLY";
+			beforeRow.put(column, row.get(column));
+		}
 		if (payload.isEmpty()) {
-			if (!blockReviewCandidate) {
+			if (!blockReviewCandidate && !reviewOnlyCandidate) {
 				return null;
 			}
 		}
@@ -937,6 +1148,13 @@ public class CleaningBatchProcessor {
 	}
 
 	private record RowProcessResult(boolean flagged, boolean written, boolean failed, BigDecimal costAmount) {
+	}
+
+	private record L3BatchGroup(String column, Long ruleId, String prompt, List<LlmDetector.BatchInput> inputs,
+			List<L3ItemRef> itemRefs) {
+	}
+
+	private record L3ItemRef(String itemId, String pkValue, String text) {
 	}
 
 }

@@ -220,6 +220,7 @@
     WRITEBACK: '写回',
     SOFT_DELETE: '软删除',
     BLOCK_ONLY: '仅阻断',
+    REVIEW_ONLY: '仅人审',
   };
 
   const formatReviewStatus = status => reviewStatusLabelMap[status] || status || '-';
