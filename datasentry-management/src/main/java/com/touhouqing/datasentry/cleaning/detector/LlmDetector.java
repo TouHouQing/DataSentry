@@ -101,8 +101,8 @@ public class LlmDetector {
 		String systemPrompt = composeSystemPrompt(customPrompt) + "\n\n" + "# Batch Output Instructions\n"
 				+ "Return JSON ONLY with shape: {\"items\":[{\"itemId\":\"...\",\"findings\":[...]}]}\n"
 				+ "- itemId must match input itemId exactly\n" + "- include every input item exactly once\n"
-				+ "- if no risk for an item, use findings: []\n" + "- no markdown code block\n\n"
-				+ "Batch Example:\n" + "Input items: [{\"itemId\":\"1\",\"text\":\"hello\"}, {\"itemId\":\"2\",\"text\":\"drop table\"}]\n"
+				+ "- if no risk for an item, use findings: []\n" + "- no markdown code block\n\n" + "Batch Example:\n"
+				+ "Input items: [{\"itemId\":\"1\",\"text\":\"hello\"}, {\"itemId\":\"2\",\"text\":\"drop table\"}]\n"
 				+ "Output: {\"items\": [{\"itemId\":\"1\",\"findings\":[]}, {\"itemId\":\"2\",\"findings\":[{\"type\":\"DESTRUCTIVE_OPERATION\",\"severity\":0.9}]}]}";
 		String userPrompt = buildBatchUserPrompt(inputs);
 		BatchCallResult callResult = executeBatchCallWithTimeout(() -> callBatchRawJson(systemPrompt, userPrompt));
