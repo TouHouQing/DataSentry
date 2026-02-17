@@ -1,5 +1,6 @@
 package com.touhouqing.datasentry.cleaning.mapper;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
@@ -46,6 +47,12 @@ public interface CleaningReviewTaskMapper extends BaseMapper<CleaningReviewTask>
 			.set(CleaningReviewTask::getUpdatedTime, now)
 			.setSql("version = version + 1");
 		return update(null, wrapper);
+	}
+
+	default int deleteExpired(LocalDateTime expireBefore, int limit) {
+		return delete(new LambdaQueryWrapper<CleaningReviewTask>().lt(CleaningReviewTask::getCreatedTime, expireBefore)
+			.orderByAsc(CleaningReviewTask::getId)
+			.last("LIMIT " + limit));
 	}
 
 }

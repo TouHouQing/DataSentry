@@ -8,12 +8,14 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.enums.CleaningReviewStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewFeedbackRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningBackupRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
 import com.touhouqing.datasentry.cleaning.model.CleaningRecord;
+import com.touhouqing.datasentry.cleaning.model.CleaningReviewFeedbackRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.util.CleaningWritebackValidator;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPool;
@@ -35,10 +37,12 @@ import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -60,9 +64,15 @@ public class CleaningReviewService {
 
 	private static final int MAX_ESCALATE_LIMIT = 1000;
 
+	private static final int DEFAULT_FEEDBACK_LIMIT = 200;
+
+	private static final int MAX_FEEDBACK_LIMIT = 1000;
+
 	private final CleaningReviewTaskMapper reviewTaskMapper;
 
 	private final CleaningBackupRecordMapper backupRecordMapper;
+
+	private final CleaningReviewFeedbackRecordMapper reviewFeedbackRecordMapper;
 
 	private final CleaningJobRunMapper jobRunMapper;
 
@@ -111,6 +121,11 @@ public class CleaningReviewService {
 
 	public CleaningReviewTask getReview(Long id) {
 		return reviewTaskMapper.selectById(id);
+	}
+
+	public List<CleaningReviewFeedbackRecord> listFeedbackSamples(Long jobRunId, Long agentId, Integer limit) {
+		int safeLimit = resolveFeedbackLimit(limit);
+		return reviewFeedbackRecordMapper.listLatest(jobRunId, agentId, safeLimit);
 	}
 
 	public List<CleaningReviewTask> listOverduePending(Integer overdueHours, Integer limit) {
@@ -179,6 +194,7 @@ public class CleaningReviewService {
 		}
 		CleaningReviewTask rejected = reviewTaskMapper.selectById(id);
 		appendReviewRecord(rejected, "REJECT");
+		appendFeedbackRecord(rejected, reviewer, reason);
 		return rejected;
 	}
 
@@ -228,6 +244,7 @@ public class CleaningReviewService {
 				}
 				else {
 					appendReviewRecord(locked, "REJECT");
+					appendFeedbackRecord(locked, reviewer, reason);
 					success++;
 				}
 			}
@@ -280,30 +297,25 @@ public class CleaningReviewService {
 			throw new InvalidInputException("Review task not found");
 		}
 		if ("BLOCK_ONLY".equals(task.getActionSuggested()) || "REVIEW_ONLY".equals(task.getActionSuggested())) {
-			updateStatus(task.getId(), CleaningReviewStatus.WRITTEN.name(), reviewer, reason);
-			appendReviewRecord(task, task.getActionSuggested());
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.WRITTEN.name(), reviewer, reason, true,
+					task.getActionSuggested());
 		}
 		if (encryptionService.isEncryptionEnabled() && !encryptionService.hasValidKey()) {
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer,
-					encryptionService.missingKeyHint());
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer,
+					encryptionService.missingKeyHint(), false, null);
 		}
 		Map<String, Object> beforeRow = parseJsonMap(task.getBeforeRowJson());
 		Map<String, Object> writebackPayload = parseJsonMap(task.getWritebackPayloadJson());
 		if (beforeRow.isEmpty() || writebackPayload.isEmpty()) {
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, reason);
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, reason, false, null);
 		}
 		PkRef pkRef = resolvePk(task.getPkJson());
 		if (pkRef == null) {
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, reason);
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, reason, false, null);
 		}
 		Datasource datasource = datasourceService.getDatasourceById(task.getDatasourceId());
 		if (datasource == null) {
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, reason);
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, reason, false, null);
 		}
 		DBConnectionPool pool = connectionPoolFactory.getPoolByDbType(datasource.getType());
 		try (Connection connection = pool.getConnection(datasourceService.getDbConfig(datasource))) {
@@ -311,29 +323,37 @@ public class CleaningReviewService {
 				.loadColumnMeta(connection, task.getTableName());
 			String validationError = CleaningWritebackValidator.validateValues(columnMeta, writebackPayload);
 			if (validationError != null) {
-				updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, validationError);
-				return reviewTaskMapper.selectById(task.getId());
+				return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, validationError, false,
+						null);
 			}
 			if (!matchesCurrentRow(connection, task.getTableName(), pkRef, beforeRow)) {
-				updateStatus(task.getId(), CleaningReviewStatus.CONFLICT.name(), reviewer, reason);
-				return reviewTaskMapper.selectById(task.getId());
+				return completeApprovedTask(task, CleaningReviewStatus.CONFLICT.name(), reviewer, reason, false, null);
 			}
 			backupBeforeRow(task, beforeRow);
 			executeUpdate(connection, task.getTableName(), writebackPayload, pkRef);
-			updateStatus(task.getId(), CleaningReviewStatus.WRITTEN.name(), reviewer, reason);
-			appendReviewRecord(task, task.getActionSuggested());
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.WRITTEN.name(), reviewer, reason, true,
+					task.getActionSuggested());
 		}
 		catch (Exception e) {
 			log.warn("Failed to writeback review task {}", task.getId(), e);
-			updateStatus(task.getId(), CleaningReviewStatus.FAILED.name(), reviewer, reason);
-			return reviewTaskMapper.selectById(task.getId());
+			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, reason, false, null);
 		}
 	}
 
 	private void updateStatus(Long id, String status, String reviewer, String reason) {
 		reviewTaskMapper.updateStatusIfMatch(id, CleaningReviewStatus.APPROVED.name(), status, reviewer, reason,
 				LocalDateTime.now());
+	}
+
+	private CleaningReviewTask completeApprovedTask(CleaningReviewTask task, String toStatus, String reviewer,
+			String reason, boolean appendAuditRecord, String actionTaken) {
+		updateStatus(task.getId(), toStatus, reviewer, reason);
+		if (appendAuditRecord) {
+			appendReviewRecord(task, actionTaken);
+		}
+		CleaningReviewTask latest = reviewTaskMapper.selectById(task.getId());
+		appendFeedbackRecord(latest != null ? latest : task, reviewer, reason);
+		return latest != null ? latest : task;
 	}
 
 	private void backupBeforeRow(CleaningReviewTask task, Map<String, Object> beforeRow) {
@@ -364,9 +384,9 @@ public class CleaningReviewService {
 	private boolean matchesCurrentRow(Connection connection, String tableName, PkRef pkRef,
 			Map<String, Object> beforeRow) throws Exception {
 		String columns = String.join(",", beforeRow.keySet());
-		String sql = "SELECT " + columns + " FROM " + tableName + " WHERE " + pkRef.column() + " = ?";
+		String sql = "SELECT " + columns + " FROM " + tableName + " WHERE " + buildPkWhereClause(pkRef) + " LIMIT 1";
 		try (PreparedStatement statement = connection.prepareStatement(sql)) {
-			statement.setObject(1, pkRef.value());
+			bindPkValues(statement, 1, pkRef);
 			try (ResultSet rs = statement.executeQuery()) {
 				if (!rs.next()) {
 					return false;
@@ -386,13 +406,13 @@ public class CleaningReviewService {
 	private void executeUpdate(Connection connection, String tableName, Map<String, Object> updateValues, PkRef pkRef)
 			throws Exception {
 		String setClause = updateValues.keySet().stream().map(col -> col + " = ?").collect(Collectors.joining(", "));
-		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + pkRef.column() + " = ?";
+		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + buildPkWhereClause(pkRef);
 		try (PreparedStatement statement = connection.prepareStatement(sql)) {
 			int index = 1;
 			for (Object value : updateValues.values()) {
 				statement.setObject(index++, value);
 			}
-			statement.setObject(index, pkRef.value());
+			bindPkValues(statement, index, pkRef);
 			statement.executeUpdate();
 		}
 	}
@@ -423,6 +443,30 @@ public class CleaningReviewService {
 		recordMapper.insert(record);
 	}
 
+	private void appendFeedbackRecord(CleaningReviewTask task, String reviewer, String reason) {
+		if (task == null) {
+			return;
+		}
+		reviewFeedbackRecordMapper.insert(CleaningReviewFeedbackRecord.builder()
+			.reviewTaskId(task.getId())
+			.jobRunId(task.getJobRunId())
+			.agentId(task.getAgentId())
+			.datasourceId(task.getDatasourceId())
+			.tableName(task.getTableName())
+			.pkHash(task.getPkHash() != null ? task.getPkHash() : hashPk(task.getPkJson()))
+			.columnName(task.getColumnName())
+			.verdict(task.getVerdict())
+			.categoriesJson(task.getCategoriesJson())
+			.actionSuggested(task.getActionSuggested())
+			.finalStatus(task.getStatus())
+			.reviewer(reviewer)
+			.reviewReason(reason)
+			.sanitizedPreview(task.getSanitizedPreview())
+			.policySnapshotJson(resolvePolicySnapshot(task.getJobRunId()))
+			.createdTime(LocalDateTime.now())
+			.build());
+	}
+
 	private String resolvePolicySnapshot(Long jobRunId) {
 		if (jobRunId == null) {
 			return null;
@@ -439,8 +483,17 @@ public class CleaningReviewService {
 		if (pkMap.isEmpty()) {
 			return null;
 		}
-		Map.Entry<String, Object> entry = pkMap.entrySet().iterator().next();
-		return new PkRef(entry.getKey(), entry.getValue());
+		List<Map.Entry<String, Object>> entries = pkMap.entrySet()
+			.stream()
+			.filter(entry -> entry.getKey() != null && !entry.getKey().isBlank())
+			.sorted(Comparator.comparing(Map.Entry::getKey))
+			.toList();
+		if (entries.isEmpty()) {
+			return null;
+		}
+		List<String> columns = entries.stream().map(Map.Entry::getKey).toList();
+		List<Object> values = entries.stream().map(Map.Entry::getValue).toList();
+		return new PkRef(columns, values);
 	}
 
 	private Map<String, Object> parseJsonMap(String json) {
@@ -490,10 +543,21 @@ public class CleaningReviewService {
 		return Math.min(limit, MAX_ESCALATE_LIMIT);
 	}
 
+	private int resolveFeedbackLimit(Integer limit) {
+		if (limit == null || limit <= 0) {
+			return DEFAULT_FEEDBACK_LIMIT;
+		}
+		return Math.min(limit, MAX_FEEDBACK_LIMIT);
+	}
+
 	private String hashPk(String pkJson) {
 		try {
+			String canonicalPkJson = canonicalizePkJson(pkJson);
+			if (canonicalPkJson == null) {
+				canonicalPkJson = pkJson != null ? pkJson : "";
+			}
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			byte[] hash = digest.digest(pkJson.getBytes(StandardCharsets.UTF_8));
+			byte[] hash = digest.digest(canonicalPkJson.getBytes(StandardCharsets.UTF_8));
 			return Base64.getEncoder().encodeToString(hash);
 		}
 		catch (Exception e) {
@@ -501,7 +565,26 @@ public class CleaningReviewService {
 		}
 	}
 
-	private record PkRef(String column, Object value) {
+	private String canonicalizePkJson(String pkJson) {
+		Map<String, Object> pkMap = parseJsonMap(pkJson);
+		if (pkMap.isEmpty()) {
+			return pkJson != null ? pkJson : "";
+		}
+		return toJsonSafe(new TreeMap<>(pkMap));
+	}
+
+	private String buildPkWhereClause(PkRef pkRef) {
+		return pkRef.columns().stream().map(column -> column + " = ?").collect(Collectors.joining(" AND "));
+	}
+
+	private void bindPkValues(PreparedStatement statement, int startIndex, PkRef pkRef) throws Exception {
+		int index = startIndex;
+		for (Object pkValue : pkRef.values()) {
+			statement.setObject(index++, pkValue);
+		}
+	}
+
+	private record PkRef(List<String> columns, List<Object> values) {
 	}
 
 }

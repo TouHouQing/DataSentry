@@ -58,6 +58,17 @@ spring:
             overdue-hours: 24
             batch-limit: 200
             reviewer: sla-bot
+          lifecycle:
+            enabled: false
+            poll-interval-ms: 3600000
+            batch-limit: 500
+            backup-retention-days: 30
+            audit-retention-days: 90
+            review-retention-days: 90
+            review-feedback-retention-days: 180
+            shadow-retention-days: 30
+            rollback-retention-days: 180
+            dlq-retention-days: 30
           shadow:
             enabled: true
             sample-ratio: 0.1

@@ -6,6 +6,7 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
+import com.touhouqing.datasentry.cleaning.model.CleaningReviewFeedbackRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.service.CleaningReviewService;
@@ -37,6 +38,14 @@ public class CleaningReviewController {
 				pageSize);
 		return ResponseEntity.ok(PageResponse.success("success", pageResult.getData(), pageResult.getTotal(),
 				pageResult.getPageNum(), pageResult.getPageSize(), pageResult.getTotalPages()));
+	}
+
+	@GetMapping("/reviews/feedback-samples")
+	public ResponseEntity<ApiResponse<List<CleaningReviewFeedbackRecord>>> listFeedbackSamples(
+			@RequestParam(required = false) Long jobRunId, @RequestParam(required = false) Long agentId,
+			@RequestParam(required = false) Integer limit) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", reviewService.listFeedbackSamples(jobRunId, agentId, limit)));
 	}
 
 	@GetMapping("/reviews/{id}")

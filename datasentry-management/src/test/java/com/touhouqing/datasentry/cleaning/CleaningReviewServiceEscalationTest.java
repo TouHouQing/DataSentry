@@ -5,6 +5,7 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRecordMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewFeedbackRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.service.CleaningBackupEncryptionService;
@@ -40,6 +41,9 @@ public class CleaningReviewServiceEscalationTest {
 	private CleaningRecordMapper recordMapper;
 
 	@Mock
+	private CleaningReviewFeedbackRecordMapper reviewFeedbackRecordMapper;
+
+	@Mock
 	private CleaningBackupEncryptionService encryptionService;
 
 	@Mock
@@ -52,8 +56,8 @@ public class CleaningReviewServiceEscalationTest {
 
 	@BeforeEach
 	public void setUp() {
-		reviewService = new CleaningReviewService(reviewTaskMapper, backupRecordMapper, jobRunMapper, recordMapper,
-				encryptionService, datasourceService, connectionPoolFactory);
+		reviewService = new CleaningReviewService(reviewTaskMapper, backupRecordMapper, reviewFeedbackRecordMapper,
+				jobRunMapper, recordMapper, encryptionService, datasourceService, connectionPoolFactory);
 	}
 
 	@Test

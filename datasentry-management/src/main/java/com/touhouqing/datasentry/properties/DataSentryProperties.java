@@ -127,6 +127,8 @@ public class DataSentryProperties {
 
 		private Review review = new Review();
 
+		private Lifecycle lifecycle = new Lifecycle();
+
 		/**
 		 * 策略发布治理开关
 		 */
@@ -410,6 +412,32 @@ public class DataSentryProperties {
 			private int batchLimit = 200;
 
 			private String reviewer = "sla-bot";
+
+		}
+
+		@Getter
+		@Setter
+		public static class Lifecycle {
+
+			private boolean enabled = false;
+
+			private long pollIntervalMs = 3600000;
+
+			private int batchLimit = 500;
+
+			private int backupRetentionDays = 30;
+
+			private int auditRetentionDays = 90;
+
+			private int reviewRetentionDays = 90;
+
+			private int reviewFeedbackRetentionDays = 180;
+
+			private int shadowRetentionDays = 30;
+
+			private int rollbackRetentionDays = 180;
+
+			private int dlqRetentionDays = 30;
 
 		}
 

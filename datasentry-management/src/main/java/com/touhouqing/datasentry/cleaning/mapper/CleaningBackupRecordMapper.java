@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningBackupRecord;
 import org.apache.ibatis.annotations.Mapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -19,6 +20,14 @@ public interface CleaningBackupRecordMapper extends BaseMapper<CleaningBackupRec
 		}
 		wrapper.last("LIMIT " + limit);
 		return selectList(wrapper);
+	}
+
+	default int deleteExpired(LocalDateTime expireBefore, int limit) {
+		LambdaQueryWrapper<CleaningBackupRecord> wrapper = new LambdaQueryWrapper<CleaningBackupRecord>()
+			.lt(CleaningBackupRecord::getCreatedTime, expireBefore)
+			.orderByAsc(CleaningBackupRecord::getId);
+		wrapper.last("LIMIT " + limit);
+		return delete(wrapper);
 	}
 
 }

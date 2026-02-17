@@ -587,6 +587,31 @@ CREATE TABLE IF NOT EXISTS datasentry_cleaning_review_task (
   INDEX idx_pk_hash (pk_hash)
 ) ENGINE=InnoDB COMMENT='清理人审任务';
 
+-- 清理人审反馈记录
+CREATE TABLE IF NOT EXISTS datasentry_cleaning_review_feedback_record (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  review_task_id BIGINT NOT NULL COMMENT '人审任务ID',
+  job_run_id BIGINT DEFAULT NULL COMMENT '任务运行ID',
+  agent_id BIGINT DEFAULT NULL COMMENT '智能体ID',
+  datasource_id BIGINT DEFAULT NULL COMMENT '数据源ID',
+  table_name VARCHAR(255) DEFAULT NULL COMMENT '表名',
+  pk_hash VARCHAR(128) DEFAULT NULL COMMENT '主键Hash',
+  column_name VARCHAR(255) DEFAULT NULL COMMENT '字段',
+  verdict VARCHAR(50) DEFAULT NULL COMMENT '判定结果',
+  categories_json TEXT COMMENT '命中类别JSON',
+  action_suggested VARCHAR(50) DEFAULT NULL COMMENT '建议动作',
+  final_status VARCHAR(50) NOT NULL COMMENT '最终状态',
+  reviewer VARCHAR(100) DEFAULT NULL COMMENT '审核人',
+  review_reason TEXT COMMENT '审核原因',
+  sanitized_preview TEXT COMMENT '脱敏预览',
+  policy_snapshot_json TEXT COMMENT '策略快照',
+  created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (id),
+  INDEX idx_review_task_id (review_task_id),
+  INDEX idx_job_run_id (job_run_id),
+  INDEX idx_created_time (created_time)
+) ENGINE=InnoDB COMMENT='清理人审反馈记录';
+
 -- 清理回滚任务
 CREATE TABLE IF NOT EXISTS datasentry_cleaning_rollback_run (
   id BIGINT NOT NULL AUTO_INCREMENT,

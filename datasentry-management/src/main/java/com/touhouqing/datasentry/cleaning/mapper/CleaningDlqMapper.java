@@ -45,4 +45,13 @@ public interface CleaningDlqMapper extends BaseMapper<CleaningDlqRecord> {
 					.set(CleaningDlqRecord::getUpdatedTime, LocalDateTime.now()));
 	}
 
+	default int deleteExpiredFinished(LocalDateTime expireBefore, int limit) {
+		LambdaQueryWrapper<CleaningDlqRecord> wrapper = new LambdaQueryWrapper<CleaningDlqRecord>()
+			.lt(CleaningDlqRecord::getCreatedTime, expireBefore)
+			.ne(CleaningDlqRecord::getStatus, "READY")
+			.orderByAsc(CleaningDlqRecord::getId);
+		wrapper.last("LIMIT " + limit);
+		return delete(wrapper);
+	}
+
 }

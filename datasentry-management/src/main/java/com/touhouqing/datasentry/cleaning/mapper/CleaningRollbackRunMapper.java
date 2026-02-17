@@ -3,6 +3,7 @@ package com.touhouqing.datasentry.cleaning.mapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.touhouqing.datasentry.cleaning.enums.CleaningRollbackStatus;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
 import org.apache.ibatis.annotations.Mapper;
 
@@ -58,6 +59,16 @@ public interface CleaningRollbackRunMapper extends BaseMapper<CleaningRollbackRu
 			.set(CleaningRollbackRun::getConflictLevelSummary, conflictLevelSummary)
 			.set(CleaningRollbackRun::getUpdatedTime, now);
 		return update(null, wrapper);
+	}
+
+	default int deleteExpiredFinished(LocalDateTime expireBefore, int limit) {
+		LambdaQueryWrapper<CleaningRollbackRun> wrapper = new LambdaQueryWrapper<CleaningRollbackRun>()
+			.lt(CleaningRollbackRun::getCreatedTime, expireBefore)
+			.notIn(CleaningRollbackRun::getStatus, CleaningRollbackStatus.READY.name(),
+					CleaningRollbackStatus.RUNNING.name())
+			.orderByAsc(CleaningRollbackRun::getId);
+		wrapper.last("LIMIT " + limit);
+		return delete(wrapper);
 	}
 
 }

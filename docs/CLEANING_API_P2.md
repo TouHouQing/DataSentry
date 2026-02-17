@@ -63,7 +63,13 @@
 ## 6.1 人审 SLA 运维（P1）
 - `GET /reviews/overdue`：查询超时待审任务（`overdueHours`/`limit`）。
 - `POST /reviews/escalate-overdue`：批量升级超时待审任务（写入升级 reviewer/reason）。
+- `GET /reviews/feedback-samples`：查询审核反馈样本（`jobRunId`/`agentId`/`limit`）。
 - 调度增强：支持基于配置自动升级超时任务（`cleaning.review.auto-escalation-enabled=true`）。
+
+## 6.2 生命周期治理（P1）
+- 调度增强：支持 TTL/Purge 定时清理（备份、审计、人审、反馈、影子、回滚、DLQ）。
+- 配置开关：`cleaning.lifecycle.enabled=true`。
+- 关键配置：`poll-interval-ms`、`batch-limit`、`*-retention-days`。
 
 ## 7. 前端页面映射
 - `CleaningJobManager.vue`：任务管理、运行控制、预算/台账、回滚入口。

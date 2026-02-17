@@ -32,6 +32,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -266,10 +267,11 @@ public class CleaningRollbackService {
 	private Map<String, Object> queryCurrentRow(Connection connection, String tableName, java.util.Set<String> columns,
 			PkRef pkRef) throws Exception {
 		String selectClause = String.join(",", columns);
-		String sql = "SELECT " + selectClause + " FROM " + tableName + " WHERE " + pkRef.column() + " = ? LIMIT 1";
+		String sql = "SELECT " + selectClause + " FROM " + tableName + " WHERE " + buildPkWhereClause(pkRef)
+				+ " LIMIT 1";
 		Map<String, Object> row = new LinkedHashMap<>();
 		try (PreparedStatement statement = connection.prepareStatement(sql)) {
-			statement.setObject(1, pkRef.value());
+			bindPkValues(statement, 1, pkRef);
 			try (ResultSet resultSet = statement.executeQuery()) {
 				if (!resultSet.next()) {
 					return row;
@@ -350,13 +352,13 @@ public class CleaningRollbackService {
 	private void executeUpdate(Connection connection, String tableName, Map<String, Object> updateValues, PkRef pkRef)
 			throws Exception {
 		String setClause = updateValues.keySet().stream().map(col -> col + " = ?").collect(Collectors.joining(", "));
-		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + pkRef.column() + " = ?";
+		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + buildPkWhereClause(pkRef);
 		try (PreparedStatement statement = connection.prepareStatement(sql)) {
 			int index = 1;
 			for (Object value : updateValues.values()) {
 				statement.setObject(index++, value);
 			}
-			statement.setObject(index, pkRef.value());
+			bindPkValues(statement, index, pkRef);
 			statement.executeUpdate();
 		}
 	}
@@ -379,8 +381,28 @@ public class CleaningRollbackService {
 		if (pkMap.isEmpty()) {
 			return null;
 		}
-		Map.Entry<String, Object> entry = pkMap.entrySet().iterator().next();
-		return new PkRef(entry.getKey(), entry.getValue());
+		List<Map.Entry<String, Object>> entries = pkMap.entrySet()
+			.stream()
+			.filter(entry -> entry.getKey() != null && !entry.getKey().isBlank())
+			.sorted(Comparator.comparing(Map.Entry::getKey))
+			.toList();
+		if (entries.isEmpty()) {
+			return null;
+		}
+		List<String> columns = entries.stream().map(Map.Entry::getKey).toList();
+		List<Object> values = entries.stream().map(Map.Entry::getValue).toList();
+		return new PkRef(columns, values);
+	}
+
+	private String buildPkWhereClause(PkRef pkRef) {
+		return pkRef.columns().stream().map(column -> column + " = ?").collect(Collectors.joining(" AND "));
+	}
+
+	private void bindPkValues(PreparedStatement statement, int startIndex, PkRef pkRef) throws Exception {
+		int index = startIndex;
+		for (Object pkValue : pkRef.values()) {
+			statement.setObject(index++, pkValue);
+		}
 	}
 
 	private void failRun(Long runId, String reason) {
@@ -423,7 +445,7 @@ public class CleaningRollbackService {
 		return Math.min(limit, MAX_CONFLICT_RESOLVE_LIMIT);
 	}
 
-	private record PkRef(String column, Object value) {
+	private record PkRef(List<String> columns, List<Object> values) {
 	}
 
 	private record RestoreResult(boolean success, Map<String, Object> beforeRow, String message) {
