@@ -5,7 +5,9 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
+import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
+import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.service.CleaningReviewService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import com.touhouqing.datasentry.vo.PageResponse;
@@ -23,6 +25,8 @@ import java.util.List;
 public class CleaningReviewController {
 
 	private final CleaningReviewService reviewService;
+
+	private final CleaningPermissionGuard permissionGuard;
 
 	@GetMapping("/reviews")
 	public ResponseEntity<PageResponse<List<CleaningReviewTask>>> listReviews(
@@ -49,6 +53,7 @@ public class CleaningReviewController {
 	@PostMapping("/reviews/{id}/approve")
 	public ResponseEntity<ApiResponse<CleaningReviewTask>> approve(@PathVariable Long id,
 			@RequestBody @Valid CleaningReviewDecisionRequest request) {
+		permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.approve(id, request)));
 	}
 
@@ -61,6 +66,7 @@ public class CleaningReviewController {
 	@PostMapping("/reviews/batch-approve")
 	public ResponseEntity<ApiResponse<CleaningReviewBatchResult>> batchApprove(
 			@RequestBody @Valid CleaningReviewBatchRequest request) {
+		permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.batchApprove(request)));
 	}
 

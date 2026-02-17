@@ -123,6 +123,10 @@ public class DataSentryProperties {
 
 		private Notification notification = new Notification();
 
+		private Permission permission = new Permission();
+
+		private Review review = new Review();
+
 		/**
 		 * 策略发布治理开关
 		 */
@@ -378,6 +382,34 @@ public class DataSentryProperties {
 				private int rateLimitPerMinute = 30;
 
 			}
+
+		}
+
+		@Getter
+		@Setter
+		public static class Permission {
+
+			private boolean enabled = false;
+
+			private String headerName = "X-Cleaning-Permissions";
+
+			private boolean allowSuperToken = true;
+
+			private String superToken = "*";
+
+		}
+
+		@Getter
+		@Setter
+		public static class Review {
+
+			private boolean autoEscalationEnabled = false;
+
+			private int overdueHours = 24;
+
+			private int batchLimit = 200;
+
+			private String reviewer = "sla-bot";
 
 		}
 

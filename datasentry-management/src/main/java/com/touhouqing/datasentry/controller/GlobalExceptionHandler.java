@@ -15,6 +15,7 @@
  */
 package com.touhouqing.datasentry.controller;
 
+import com.touhouqing.datasentry.exception.ForbiddenException;
 import com.touhouqing.datasentry.exception.InternalServerException;
 import com.touhouqing.datasentry.exception.InvalidInputException;
 import com.touhouqing.datasentry.vo.ApiResponse;
@@ -36,6 +37,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(InternalServerException.class)
 	@ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
 	public ApiResponse<Object> handleInvalidInputException(InternalServerException e) {
+		return ApiResponse.error(e.getMessage());
+	}
+
+	@ExceptionHandler(ForbiddenException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ApiResponse<Object> handleForbiddenException(ForbiddenException e) {
 		return ApiResponse.error(e.getMessage());
 	}
 

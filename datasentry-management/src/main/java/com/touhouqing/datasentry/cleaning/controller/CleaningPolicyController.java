@@ -7,6 +7,8 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyVersionView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRuleRequest;
+import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
+import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyService;
@@ -24,6 +26,8 @@ import java.util.List;
 public class CleaningPolicyController {
 
 	private final CleaningPolicyService policyService;
+
+	private final CleaningPermissionGuard permissionGuard;
 
 	@GetMapping("/policies")
 	public ResponseEntity<ApiResponse<List<CleaningPolicyView>>> listPolicies() {
@@ -63,12 +67,14 @@ public class CleaningPolicyController {
 	@PostMapping("/policies/{policyId}/publish")
 	public ResponseEntity<ApiResponse<CleaningPolicyVersionView>> publishPolicy(@PathVariable Long policyId,
 			@RequestBody(required = false) CleaningPolicyPublishRequest request) {
+		permissionGuard.require(CleaningPermissionCode.POLICY_PUBLISH);
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.publishPolicy(policyId, request)));
 	}
 
 	@PostMapping("/policies/{policyId}/rollback-version")
 	public ResponseEntity<ApiResponse<CleaningPolicyVersionView>> rollbackPolicyVersion(@PathVariable Long policyId,
 			@RequestBody @Valid CleaningPolicyRollbackVersionRequest request) {
+		permissionGuard.require(CleaningPermissionCode.POLICY_PUBLISH);
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.rollbackToVersion(policyId, request)));
 	}
 

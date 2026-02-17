@@ -48,6 +48,16 @@ spring:
             custom-domain: ${OSS_CUSTOM_DOMAIN:}
         cleaning:
           enabled: true
+          permission:
+            enabled: false
+            header-name: X-Cleaning-Permissions
+            allow-super-token: true
+            super-token: '*'
+          review:
+            auto-escalation-enabled: false
+            overdue-hours: 24
+            batch-limit: 200
+            reviewer: sla-bot
           shadow:
             enabled: true
             sample-ratio: 0.1

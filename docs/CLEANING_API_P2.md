@@ -9,6 +9,11 @@
 - 响应包装：`ApiResponse<T>`
 - 追踪头：`X-Trace-Id`（可选，未传则服务端生成）
 - 在线清理鉴权头：`X-API-KEY`（必需，且 Agent 开启 API Key）
+- 管理面权限头（可选，开启后必需）：`X-Cleaning-Permissions`
+  - `policy:publish`
+  - `writeback:execute`
+  - `rollback:execute`
+  - `audit:export`
 
 ## 2. 在线清理（P0/P2）
 - `POST /{agentId}/check`
@@ -58,6 +63,7 @@
 ## 6.1 人审 SLA 运维（P1）
 - `GET /reviews/overdue`：查询超时待审任务（`overdueHours`/`limit`）。
 - `POST /reviews/escalate-overdue`：批量升级超时待审任务（写入升级 reviewer/reason）。
+- 调度增强：支持基于配置自动升级超时任务（`cleaning.review.auto-escalation-enabled=true`）。
 
 ## 7. 前端页面映射
 - `CleaningJobManager.vue`：任务管理、运行控制、预算/台账、回滚入口。

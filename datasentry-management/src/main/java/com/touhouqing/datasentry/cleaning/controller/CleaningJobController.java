@@ -3,9 +3,11 @@ package com.touhouqing.datasentry.cleaning.controller;
 import com.touhouqing.datasentry.cleaning.dto.CleaningJobCreateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningBudgetView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningEvidenceBundleView;
+import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningCostLedger;
 import com.touhouqing.datasentry.cleaning.model.CleaningJob;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
+import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.service.CleaningJobService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import jakarta.validation.Valid;
@@ -22,8 +24,11 @@ public class CleaningJobController {
 
 	private final CleaningJobService jobService;
 
+	private final CleaningPermissionGuard permissionGuard;
+
 	@PostMapping("/jobs")
 	public ResponseEntity<ApiResponse<CleaningJob>> createJob(@RequestBody @Valid CleaningJobCreateRequest request) {
+		requireWritebackPermissionIfNeeded(request);
 		CleaningJob job = jobService.createJob(request);
 		return ResponseEntity.ok(ApiResponse.success("success", job));
 	}
@@ -31,6 +36,7 @@ public class CleaningJobController {
 	@PutMapping("/jobs/{jobId}")
 	public ResponseEntity<ApiResponse<CleaningJob>> updateJob(@PathVariable Long jobId,
 			@RequestBody @Valid CleaningJobCreateRequest request) {
+		requireWritebackPermissionIfNeeded(request);
 		CleaningJob job = jobService.updateJob(jobId, request);
 		return ResponseEntity.ok(ApiResponse.success("success", job));
 	}
@@ -103,7 +109,21 @@ public class CleaningJobController {
 
 	@GetMapping("/job-runs/{runId}/evidence-bundle")
 	public ResponseEntity<ApiResponse<CleaningEvidenceBundleView>> exportEvidenceBundle(@PathVariable Long runId) {
+		permissionGuard.require(CleaningPermissionCode.AUDIT_EXPORT);
 		return ResponseEntity.ok(ApiResponse.success("success", jobService.exportEvidenceBundle(runId)));
+	}
+
+	private void requireWritebackPermissionIfNeeded(CleaningJobCreateRequest request) {
+		if (request == null) {
+			return;
+		}
+		String mode = request.getMode();
+		String writebackMode = request.getWritebackMode();
+		boolean writebackRequested = "WRITEBACK".equalsIgnoreCase(mode)
+				|| (writebackMode != null && !"NONE".equalsIgnoreCase(writebackMode));
+		if (writebackRequested) {
+			permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
+		}
 	}
 
 }

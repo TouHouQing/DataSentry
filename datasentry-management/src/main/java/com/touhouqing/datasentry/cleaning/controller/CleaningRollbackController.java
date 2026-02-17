@@ -2,8 +2,10 @@ package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveResult;
+import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackConflictRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
+import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.service.CleaningRollbackService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +21,11 @@ public class CleaningRollbackController {
 
 	private final CleaningRollbackService rollbackService;
 
+	private final CleaningPermissionGuard permissionGuard;
+
 	@PostMapping("/job-runs/{runId}/rollback")
 	public ResponseEntity<ApiResponse<CleaningRollbackRun>> createRollback(@PathVariable Long runId) {
+		permissionGuard.require(CleaningPermissionCode.ROLLBACK_EXECUTE);
 		return ResponseEntity.ok(ApiResponse.success("success", rollbackService.createRollbackRun(runId)));
 	}
 
@@ -40,6 +45,7 @@ public class CleaningRollbackController {
 	@PostMapping("/rollback-conflicts/resolve")
 	public ResponseEntity<ApiResponse<CleaningRollbackConflictResolveResult>> resolveConflicts(
 			@RequestBody CleaningRollbackConflictResolveRequest request) {
+		permissionGuard.require(CleaningPermissionCode.ROLLBACK_EXECUTE);
 		return ResponseEntity.ok(ApiResponse.success("success", rollbackService.resolveConflictRecords(request)));
 	}
 
