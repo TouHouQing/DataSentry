@@ -2,6 +2,7 @@ package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningJobCreateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningBudgetView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningEvidenceBundleView;
 import com.touhouqing.datasentry.cleaning.model.CleaningCostLedger;
 import com.touhouqing.datasentry.cleaning.model.CleaningJob;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
@@ -98,6 +99,11 @@ public class CleaningJobController {
 			@RequestParam(required = false) Long jobRunId, @RequestParam(required = false) String traceId,
 			@RequestParam(required = false) String channel) {
 		return ResponseEntity.ok(ApiResponse.success("success", jobService.listCostLedger(jobRunId, traceId, channel)));
+	}
+
+	@GetMapping("/job-runs/{runId}/evidence-bundle")
+	public ResponseEntity<ApiResponse<CleaningEvidenceBundleView>> exportEvidenceBundle(@PathVariable Long runId) {
+		return ResponseEntity.ok(ApiResponse.success("success", jobService.exportEvidenceBundle(runId)));
 	}
 
 }

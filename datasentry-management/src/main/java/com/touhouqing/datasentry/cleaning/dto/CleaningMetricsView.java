@@ -70,4 +70,6 @@ public class CleaningMetricsView {
 
 	private Long cloudInferenceP95LatencyMs;
 
+	private CleaningReviewOpsView reviewOps;
+
 }

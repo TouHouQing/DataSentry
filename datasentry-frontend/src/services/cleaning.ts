@@ -300,6 +300,18 @@ export interface CleaningMetricsView {
   cloudFallbackCount?: number;
   cloudInferenceAvgLatencyMs?: number;
   cloudInferenceP95LatencyMs?: number;
+  reviewOps?: CleaningReviewOpsView;
+}
+
+export interface CleaningReviewOpsView {
+  pendingTasks?: number;
+  pendingHighRiskTasks?: number;
+  pendingMediumRiskTasks?: number;
+  pendingLowRiskTasks?: number;
+  overdueTasks?: number;
+  slaHours?: number;
+  avgHandleMinutes?: number;
+  slaComplianceRate?: number;
 }
 
 export interface CleaningAlertView {
@@ -403,6 +415,35 @@ export interface CleaningRollbackRun {
   updatedTime?: string;
 }
 
+export interface CleaningEvidenceRollbackView {
+  rollbackRun?: CleaningRollbackRun;
+  totalVerifyRecords?: number;
+  totalConflictRecords?: number;
+  verifyRecordsTruncated?: boolean;
+  conflictRecordsTruncated?: boolean;
+  verifyRecords?: Array<Record<string, unknown>>;
+  conflictRecords?: Array<Record<string, unknown>>;
+}
+
+export interface CleaningEvidenceBundleView {
+  jobRunId?: number;
+  exportedTime?: string;
+  jobRun?: CleaningJobRun;
+  policyVersion?: CleaningPolicyVersion;
+  totalAuditRecords?: number;
+  totalReviewTasks?: number;
+  totalShadowCompareRecords?: number;
+  totalRollbackRuns?: number;
+  auditRecordsTruncated?: boolean;
+  reviewTasksTruncated?: boolean;
+  shadowCompareRecordsTruncated?: boolean;
+  rollbackRunsTruncated?: boolean;
+  auditRecords?: Array<Record<string, unknown>>;
+  reviewTasks?: CleaningReviewTask[];
+  shadowCompareRecords?: Array<Record<string, unknown>>;
+  rollbackRuns?: CleaningEvidenceRollbackView[];
+}
+
 const API_BASE_URL = '/api/datasentry/cleaning';
 
 class CleaningService {
@@ -500,6 +541,13 @@ class CleaningService {
       },
     );
     return response.data.data || [];
+  }
+
+  async getEvidenceBundle(runId: number): Promise<CleaningEvidenceBundleView | null> {
+    const response = await axios.get<ApiResponse<CleaningEvidenceBundleView>>(
+      `${API_BASE_URL}/job-runs/${runId}/evidence-bundle`,
+    );
+    return response.data.data || null;
   }
 
   async listDlq(params?: { status?: string; jobRunId?: number }): Promise<CleaningDlqRecord[]> {

@@ -37,7 +37,7 @@
 - 启动行为：应用启动自动执行一次价格初始化（冷启动保障）。
 
 ## 5. 观测与告警（P2）
-- `GET /metrics/summary`：全局运行指标。
+- `GET /metrics/summary`：全局运行指标（含人审 SLA 指标：待审、超时、高风险积压、SLA 达成率）。
 - `GET /alerts`：告警列表（含 ONNX/CLOUD 降级告警）。
 
 ## 5.1 配置元数据（新手友好）
@@ -51,6 +51,7 @@
 - `POST /dlq/{id}/retry`：单条重试。
 - `POST /job-runs/{runId}/rollback`：创建回滚任务。
 - `GET /rollbacks/{rollbackRunId}`：回滚状态查询。
+- `GET /job-runs/{runId}/evidence-bundle`：导出任务级证据包（策略、清洗、审核、回滚、影子对照）。
 
 ## 7. 前端页面映射
 - `CleaningJobManager.vue`：任务管理、运行控制、预算/台账、回滚入口。

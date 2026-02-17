@@ -135,11 +135,14 @@
                 {{ formatBudgetMessage(scope.row.budgetStatus, scope.row.budgetMessage) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="360" fixed="right">
+            <el-table-column label="操作" width="430" fixed="right">
               <template #default="scope">
                 <el-button size="small" @click="loadBudget(scope.row)">预算</el-button>
                 <el-button size="small" type="primary" @click="createRollback(scope.row)">
                   回滚
+                </el-button>
+                <el-button size="small" type="info" @click="exportEvidenceBundle(scope.row)">
+                  证据包
                 </el-button>
                 <el-button size="small" type="warning" @click="pauseRun(scope.row)">暂停</el-button>
                 <el-button size="small" type="success" @click="resumeRun(scope.row)">
@@ -1317,6 +1320,30 @@
       ElMessage.error('创建回滚任务失败');
     } finally {
       rollbackLoading.value = false;
+    }
+  };
+
+  const exportEvidenceBundle = async run => {
+    try {
+      const bundle = await cleaningService.getEvidenceBundle(run.id);
+      if (!bundle) {
+        ElMessage.error('证据包导出失败');
+        return;
+      }
+      const filename = `cleaning-evidence-run-${run.id}.json`;
+      const content = JSON.stringify(bundle, null, 2);
+      const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+      const link = document.createElement('a');
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+      ElMessage.success('证据包已导出');
+    } catch (error) {
+      ElMessage.error('证据包导出失败');
     }
   };
 

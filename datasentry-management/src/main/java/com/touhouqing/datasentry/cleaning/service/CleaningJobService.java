@@ -2,6 +2,7 @@ package com.touhouqing.datasentry.cleaning.service;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningJobCreateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningBudgetView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningEvidenceBundleView;
 import com.touhouqing.datasentry.cleaning.model.CleaningCostLedger;
 import com.touhouqing.datasentry.cleaning.model.CleaningJob;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
@@ -35,5 +36,7 @@ public interface CleaningJobService {
 	CleaningBudgetView getBudget(Long runId);
 
 	List<CleaningCostLedger> listCostLedger(Long jobRunId, String traceId, String channel);
+
+	CleaningEvidenceBundleView exportEvidenceBundle(Long runId);
 
 }

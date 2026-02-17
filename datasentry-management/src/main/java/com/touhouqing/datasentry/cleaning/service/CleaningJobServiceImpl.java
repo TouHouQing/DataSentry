@@ -2,6 +2,7 @@ package com.touhouqing.datasentry.cleaning.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.touhouqing.datasentry.cleaning.dto.CleaningBudgetView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningEvidenceBundleView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningJobCreateRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningJobMode;
 import com.touhouqing.datasentry.cleaning.enums.CleaningJobRunStatus;
@@ -37,6 +38,8 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 	private final CleaningTargetConfigValidator targetConfigValidator;
 
 	private final CleaningCostLedgerService costLedgerService;
+
+	private final CleaningEvidenceService evidenceService;
 
 	private final DataSentryProperties dataSentryProperties;
 
@@ -269,6 +272,11 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 	@Override
 	public List<CleaningCostLedger> listCostLedger(Long jobRunId, String traceId, String channel) {
 		return costLedgerService.list(jobRunId, traceId, channel);
+	}
+
+	@Override
+	public CleaningEvidenceBundleView exportEvidenceBundle(Long runId) {
+		return evidenceService.exportByRunId(runId);
 	}
 
 	private String resolveEnum(String value, String defaultValue, Class<? extends Enum<?>> enumType) {

@@ -42,6 +42,35 @@
         </el-row>
 
         <el-row :gutter="16" class="metrics-row">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">待审核任务</div>
+              <div class="metric-value">{{ metrics.reviewOps?.pendingTasks || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card danger">
+              <div class="metric-label">超时审核（>{{ metrics.reviewOps?.slaHours || 24 }}h）</div>
+              <div class="metric-value">{{ metrics.reviewOps?.overdueTasks || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card warning">
+              <div class="metric-label">高风险待审</div>
+              <div class="metric-value">{{ metrics.reviewOps?.pendingHighRiskTasks || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">审核 SLA 达成率</div>
+              <div class="metric-value">
+                {{ formatPercent(metrics.reviewOps?.slaComplianceRate) }}
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" class="metrics-row">
           <el-col :xs="24" :sm="8">
             <el-card shadow="never" class="metric-card">
               <div class="metric-label">总成本</div>
@@ -343,6 +372,16 @@
     cloudFallbackCount: 0,
     cloudInferenceAvgLatencyMs: 0,
     cloudInferenceP95LatencyMs: 0,
+    reviewOps: {
+      pendingTasks: 0,
+      pendingHighRiskTasks: 0,
+      pendingMediumRiskTasks: 0,
+      pendingLowRiskTasks: 0,
+      overdueTasks: 0,
+      slaHours: 24,
+      avgHandleMinutes: 0,
+      slaComplianceRate: 0,
+    },
   });
 
   const alerts = ref([]);
@@ -363,6 +402,13 @@
       return '-';
     }
     return String(value).replace('T', ' ');
+  };
+
+  const formatPercent = value => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return '0.00%';
+    }
+    return `${Number(value).toFixed(2)}%`;
   };
 
   const formatProviderStatus = status => {
