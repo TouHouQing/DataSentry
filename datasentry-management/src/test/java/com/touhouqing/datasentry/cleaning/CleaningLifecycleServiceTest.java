@@ -70,14 +70,6 @@ public class CleaningLifecycleServiceTest {
 		lifecycleService = new CleaningLifecycleService(properties, backupRecordMapper, recordMapper, reviewTaskMapper,
 				reviewFeedbackRecordMapper, shadowCompareRecordMapper, rollbackVerifyRecordMapper,
 				rollbackConflictRecordMapper, rollbackRunMapper, dlqMapper);
-		when(recordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(reviewTaskMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(reviewFeedbackRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(shadowCompareRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(rollbackVerifyRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(rollbackConflictRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
-		when(rollbackRunMapper.deleteExpiredFinished(any(), anyInt())).thenReturn(0);
-		when(dlqMapper.deleteExpiredFinished(any(), anyInt())).thenReturn(0);
 	}
 
 	@Test
@@ -93,6 +85,14 @@ public class CleaningLifecycleServiceTest {
 	@Test
 	public void shouldWriteAuditWhenAnyDataPurged() {
 		when(backupRecordMapper.deleteExpired(any(), anyInt())).thenReturn(2, 1);
+		when(recordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(reviewTaskMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(reviewFeedbackRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(shadowCompareRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(rollbackVerifyRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(rollbackConflictRecordMapper.deleteExpired(any(), anyInt())).thenReturn(0);
+		when(rollbackRunMapper.deleteExpiredFinished(any(), anyInt())).thenReturn(0);
+		when(dlqMapper.deleteExpiredFinished(any(), anyInt())).thenReturn(0);
 		when(recordMapper.insert(any(CleaningRecord.class))).thenReturn(1);
 
 		CleaningLifecycleService.CleaningLifecyclePurgeResult result = lifecycleService.purgeExpiredData();
