@@ -51,7 +51,13 @@
 - `POST /dlq/{id}/retry`：单条重试。
 - `POST /job-runs/{runId}/rollback`：创建回滚任务。
 - `GET /rollbacks/{rollbackRunId}`：回滚状态查询。
+- `GET /rollback-conflicts`：回滚冲突列表（`rollbackRunId`/`level`/`resolved` 过滤）。
+- `POST /rollback-conflicts/resolve`：批量处置回滚冲突（按 `conflictIds` 或 `rollbackRunId`）。
 - `GET /job-runs/{runId}/evidence-bundle`：导出任务级证据包（策略、清洗、审核、回滚、影子对照）。
+
+## 6.1 人审 SLA 运维（P1）
+- `GET /reviews/overdue`：查询超时待审任务（`overdueHours`/`limit`）。
+- `POST /reviews/escalate-overdue`：批量升级超时待审任务（写入升级 reviewer/reason）。
 
 ## 7. 前端页面映射
 - `CleaningJobManager.vue`：任务管理、运行控制、预算/台账、回滚入口。

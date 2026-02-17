@@ -1,5 +1,8 @@
 package com.touhouqing.datasentry.cleaning.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveResult;
 import com.touhouqing.datasentry.cleaning.enums.CleaningRollbackStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobMapper;
@@ -40,6 +43,10 @@ import java.util.stream.Collectors;
 public class CleaningRollbackService {
 
 	private static final int BATCH_SIZE = 200;
+
+	private static final int DEFAULT_CONFLICT_RESOLVE_LIMIT = 500;
+
+	private static final int MAX_CONFLICT_RESOLVE_LIMIT = 2000;
 
 	private final CleaningRollbackRunMapper rollbackRunMapper;
 
@@ -87,6 +94,44 @@ public class CleaningRollbackService {
 
 	public CleaningRollbackRun getRollbackRun(Long rollbackRunId) {
 		return rollbackRunMapper.selectById(rollbackRunId);
+	}
+
+	public List<CleaningRollbackConflictRecord> listConflictRecords(Long rollbackRunId, String level, Integer resolved,
+			Integer limit) {
+		LambdaQueryWrapper<CleaningRollbackConflictRecord> wrapper = new LambdaQueryWrapper<>();
+		if (rollbackRunId != null) {
+			wrapper.eq(CleaningRollbackConflictRecord::getRollbackRunId, rollbackRunId);
+		}
+		if (level != null && !level.isBlank()) {
+			wrapper.eq(CleaningRollbackConflictRecord::getLevel, level.toUpperCase());
+		}
+		if (resolved != null) {
+			wrapper.eq(CleaningRollbackConflictRecord::getResolved, resolved);
+		}
+		wrapper.orderByAsc(CleaningRollbackConflictRecord::getId);
+		wrapper.last("LIMIT " + resolveConflictLimit(limit));
+		return rollbackConflictRecordMapper.selectList(wrapper);
+	}
+
+	public CleaningRollbackConflictResolveResult resolveConflictRecords(
+			CleaningRollbackConflictResolveRequest request) {
+		List<CleaningRollbackConflictRecord> targets = resolveConflictTargets(request);
+		int resolved = 0;
+		int skipped = 0;
+		for (CleaningRollbackConflictRecord target : targets) {
+			int updated = rollbackConflictRecordMapper.resolveIfUnresolved(target.getId());
+			if (updated > 0) {
+				resolved++;
+			}
+			else {
+				skipped++;
+			}
+		}
+		return CleaningRollbackConflictResolveResult.builder()
+			.totalCandidates(targets.size())
+			.resolved(resolved)
+			.skipped(skipped)
+			.build();
 	}
 
 	public void processRun(CleaningRollbackRun run) {
@@ -349,6 +394,33 @@ public class CleaningRollbackService {
 
 	private Long defaultLong(Long value) {
 		return value != null ? value : 0L;
+	}
+
+	private List<CleaningRollbackConflictRecord> resolveConflictTargets(
+			CleaningRollbackConflictResolveRequest request) {
+		if (request != null && request.getConflictIds() != null && !request.getConflictIds().isEmpty()) {
+			return rollbackConflictRecordMapper.selectList(new LambdaQueryWrapper<CleaningRollbackConflictRecord>()
+				.in(CleaningRollbackConflictRecord::getId, request.getConflictIds()));
+		}
+		if (request == null || request.getRollbackRunId() == null) {
+			throw new InvalidInputException("conflictIds 或 rollbackRunId 必须至少提供一个");
+		}
+		LambdaQueryWrapper<CleaningRollbackConflictRecord> wrapper = new LambdaQueryWrapper<CleaningRollbackConflictRecord>()
+			.eq(CleaningRollbackConflictRecord::getRollbackRunId, request.getRollbackRunId())
+			.eq(CleaningRollbackConflictRecord::getResolved, 0)
+			.orderByAsc(CleaningRollbackConflictRecord::getId);
+		if (request.getLevel() != null && !request.getLevel().isBlank()) {
+			wrapper.eq(CleaningRollbackConflictRecord::getLevel, request.getLevel().toUpperCase());
+		}
+		wrapper.last("LIMIT " + resolveConflictLimit(request.getLimit()));
+		return rollbackConflictRecordMapper.selectList(wrapper);
+	}
+
+	private int resolveConflictLimit(Integer limit) {
+		if (limit == null || limit <= 0) {
+			return DEFAULT_CONFLICT_RESOLVE_LIMIT;
+		}
+		return Math.min(limit, MAX_CONFLICT_RESOLVE_LIMIT);
 	}
 
 	private record PkRef(String column, Object value) {

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.enums.CleaningReviewStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
@@ -30,6 +32,7 @@ import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -50,6 +53,12 @@ public class CleaningReviewService {
 	private static final int DEFAULT_PAGE_SIZE = 20;
 
 	private static final int MAX_PAGE_SIZE = 200;
+
+	private static final int DEFAULT_ESCALATE_HOURS = 24;
+
+	private static final int DEFAULT_ESCALATE_LIMIT = 200;
+
+	private static final int MAX_ESCALATE_LIMIT = 1000;
 
 	private final CleaningReviewTaskMapper reviewTaskMapper;
 
@@ -102,6 +111,46 @@ public class CleaningReviewService {
 
 	public CleaningReviewTask getReview(Long id) {
 		return reviewTaskMapper.selectById(id);
+	}
+
+	public List<CleaningReviewTask> listOverduePending(Integer overdueHours, Integer limit) {
+		int safeHours = resolveEscalateHours(overdueHours);
+		int safeLimit = resolveEscalateLimit(limit);
+		LocalDateTime threshold = LocalDateTime.now().minusHours(safeHours);
+		LambdaQueryWrapper<CleaningReviewTask> wrapper = new LambdaQueryWrapper<CleaningReviewTask>()
+			.eq(CleaningReviewTask::getStatus, CleaningReviewStatus.PENDING.name())
+			.lt(CleaningReviewTask::getCreatedTime, threshold)
+			.orderByAsc(CleaningReviewTask::getCreatedTime)
+			.orderByAsc(CleaningReviewTask::getId);
+		wrapper.last("LIMIT " + safeLimit);
+		return reviewTaskMapper.selectList(wrapper);
+	}
+
+	public CleaningReviewEscalateResult escalateOverduePending(CleaningReviewEscalateRequest request) {
+		int safeHours = resolveEscalateHours(request != null ? request.getOverdueHours() : null);
+		int safeLimit = resolveEscalateLimit(request != null ? request.getLimit() : null);
+		String reviewer = resolveReviewer(request != null ? request.getReviewer() : null);
+		String reason = resolveEscalateReason(request != null ? request.getReason() : null, safeHours);
+
+		List<CleaningReviewTask> overdueTasks = listOverduePending(safeHours, safeLimit);
+		int escalated = 0;
+		int skipped = 0;
+		LocalDateTime now = LocalDateTime.now();
+		for (CleaningReviewTask overdueTask : overdueTasks) {
+			int updated = reviewTaskMapper.markEscalatedIfPending(overdueTask.getId(), reviewer, reason, now);
+			if (updated > 0) {
+				escalated++;
+			}
+			else {
+				skipped++;
+			}
+		}
+		return CleaningReviewEscalateResult.builder()
+			.totalCandidates(overdueTasks.size())
+			.escalated(escalated)
+			.skipped(skipped)
+			.overdueHours(safeHours)
+			.build();
 	}
 
 	public CleaningReviewTask approve(Long id, CleaningReviewDecisionRequest request) {
@@ -418,6 +467,27 @@ public class CleaningReviewService {
 
 	private String resolveReviewer(String reviewer) {
 		return reviewer != null && !reviewer.isBlank() ? reviewer : "admin";
+	}
+
+	private String resolveEscalateReason(String reason, int overdueHours) {
+		if (reason != null && !reason.isBlank()) {
+			return reason;
+		}
+		return "AUTO_ESCALATED: pending over " + overdueHours + "h";
+	}
+
+	private int resolveEscalateHours(Integer hours) {
+		if (hours == null || hours <= 0) {
+			return DEFAULT_ESCALATE_HOURS;
+		}
+		return Math.min(hours, (int) Duration.ofDays(7).toHours());
+	}
+
+	private int resolveEscalateLimit(Integer limit) {
+		if (limit == null || limit <= 0) {
+			return DEFAULT_ESCALATE_LIMIT;
+		}
+		return Math.min(limit, MAX_ESCALATE_LIMIT);
 	}
 
 	private String hashPk(String pkJson) {

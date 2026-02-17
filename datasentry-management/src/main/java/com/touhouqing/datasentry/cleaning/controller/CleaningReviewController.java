@@ -3,6 +3,8 @@ package com.touhouqing.datasentry.cleaning.controller;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.service.CleaningReviewService;
 import com.touhouqing.datasentry.vo.ApiResponse;
@@ -38,6 +40,12 @@ public class CleaningReviewController {
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.getReview(id)));
 	}
 
+	@GetMapping("/reviews/overdue")
+	public ResponseEntity<ApiResponse<List<CleaningReviewTask>>> listOverdueReviews(
+			@RequestParam(required = false) Integer overdueHours, @RequestParam(required = false) Integer limit) {
+		return ResponseEntity.ok(ApiResponse.success("success", reviewService.listOverduePending(overdueHours, limit)));
+	}
+
 	@PostMapping("/reviews/{id}/approve")
 	public ResponseEntity<ApiResponse<CleaningReviewTask>> approve(@PathVariable Long id,
 			@RequestBody @Valid CleaningReviewDecisionRequest request) {
@@ -60,6 +68,12 @@ public class CleaningReviewController {
 	public ResponseEntity<ApiResponse<CleaningReviewBatchResult>> batchReject(
 			@RequestBody @Valid CleaningReviewBatchRequest request) {
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.batchReject(request)));
+	}
+
+	@PostMapping("/reviews/escalate-overdue")
+	public ResponseEntity<ApiResponse<CleaningReviewEscalateResult>> escalateOverdue(
+			@RequestBody(required = false) CleaningReviewEscalateRequest request) {
+		return ResponseEntity.ok(ApiResponse.success("success", reviewService.escalateOverduePending(request)));
 	}
 
 }

@@ -8,6 +8,7 @@
             <p class="content-subtitle">集中处理批量清理任务的审核与写回</p>
           </div>
           <div class="header-actions">
+            <el-button type="warning" @click="handleEscalateOverdue">升级超时任务</el-button>
             <el-button :icon="Refresh" size="large" @click="loadReviews">刷新</el-button>
           </div>
         </div>
@@ -322,6 +323,34 @@
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') {
         ElMessage.error('拒绝失败');
+      }
+    }
+  };
+
+  const handleEscalateOverdue = async () => {
+    try {
+      const { value } = await ElMessageBox.prompt('输入超时小时数（默认 24）', '升级超时任务', {
+        confirmButtonText: '执行升级',
+        cancelButtonText: '取消',
+        inputPattern: /^\d*$/,
+        inputErrorMessage: '请输入数字',
+      });
+      const overdueHours = Number(value || 24);
+      const result = await cleaningService.escalateOverdueReviews({
+        overdueHours: overdueHours > 0 ? overdueHours : 24,
+        limit: 200,
+        reviewer: 'sla-bot',
+        reason: `AUTO_ESCALATED: pending over ${overdueHours > 0 ? overdueHours : 24}h`,
+      });
+      ElMessage.success(
+        `升级完成：候选 ${result?.totalCandidates || 0}，成功 ${result?.escalated || 0}，跳过 ${
+          result?.skipped || 0
+        }`,
+      );
+      await loadReviews(false);
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error('升级超时任务失败');
       }
     }
   };

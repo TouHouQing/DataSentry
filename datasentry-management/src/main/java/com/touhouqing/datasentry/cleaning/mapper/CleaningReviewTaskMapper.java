@@ -37,4 +37,15 @@ public interface CleaningReviewTaskMapper extends BaseMapper<CleaningReviewTask>
 		return update(null, wrapper);
 	}
 
+	default int markEscalatedIfPending(Long id, String reviewer, String reason, LocalDateTime now) {
+		LambdaUpdateWrapper<CleaningReviewTask> wrapper = new LambdaUpdateWrapper<CleaningReviewTask>()
+			.eq(CleaningReviewTask::getId, id)
+			.eq(CleaningReviewTask::getStatus, "PENDING")
+			.set(CleaningReviewTask::getReviewer, reviewer)
+			.set(CleaningReviewTask::getReviewReason, reason)
+			.set(CleaningReviewTask::getUpdatedTime, now)
+			.setSql("version = version + 1");
+		return update(null, wrapper);
+	}
+
 }

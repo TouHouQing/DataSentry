@@ -113,6 +113,20 @@ export interface CleaningReviewBatchResult {
   stale: number;
 }
 
+export interface CleaningReviewEscalateRequest {
+  overdueHours?: number;
+  limit?: number;
+  reviewer?: string;
+  reason?: string;
+}
+
+export interface CleaningReviewEscalateResult {
+  totalCandidates: number;
+  escalated: number;
+  skipped: number;
+  overdueHours: number;
+}
+
 export interface CleaningBinding {
   id?: number;
   agentId: number;
@@ -415,6 +429,29 @@ export interface CleaningRollbackRun {
   updatedTime?: string;
 }
 
+export interface CleaningRollbackConflictRecord {
+  id: number;
+  rollbackRunId?: number;
+  backupRecordId?: number;
+  level?: string;
+  reason?: string;
+  resolved?: number;
+  createdTime?: string;
+}
+
+export interface CleaningRollbackConflictResolveRequest {
+  conflictIds?: number[];
+  rollbackRunId?: number;
+  level?: string;
+  limit?: number;
+}
+
+export interface CleaningRollbackConflictResolveResult {
+  totalCandidates: number;
+  resolved: number;
+  skipped: number;
+}
+
 export interface CleaningEvidenceRollbackView {
   rollbackRun?: CleaningRollbackRun;
   totalVerifyRecords?: number;
@@ -655,6 +692,29 @@ class CleaningService {
     return response.data.data || null;
   }
 
+  async listRollbackConflicts(params?: {
+    rollbackRunId?: number;
+    level?: string;
+    resolved?: number;
+    limit?: number;
+  }): Promise<CleaningRollbackConflictRecord[]> {
+    const response = await axios.get<ApiResponse<CleaningRollbackConflictRecord[]>>(
+      `${API_BASE_URL}/rollback-conflicts`,
+      { params },
+    );
+    return response.data.data || [];
+  }
+
+  async resolveRollbackConflicts(
+    payload: CleaningRollbackConflictResolveRequest,
+  ): Promise<CleaningRollbackConflictResolveResult | null> {
+    const response = await axios.post<ApiResponse<CleaningRollbackConflictResolveResult>>(
+      `${API_BASE_URL}/rollback-conflicts/resolve`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
   async listPolicies(): Promise<CleaningPolicyView[]> {
     const response = await axios.get<ApiResponse<CleaningPolicyView[]>>(`${API_BASE_URL}/policies`);
     return response.data.data || [];
@@ -772,6 +832,27 @@ class CleaningService {
     const response = await axios.post<ApiResponse<CleaningReviewTask>>(
       `${API_BASE_URL}/reviews/${taskId}/reject`,
       payload,
+    );
+    return response.data.data || null;
+  }
+
+  async listOverdueReviews(params?: {
+    overdueHours?: number;
+    limit?: number;
+  }): Promise<CleaningReviewTask[]> {
+    const response = await axios.get<ApiResponse<CleaningReviewTask[]>>(
+      `${API_BASE_URL}/reviews/overdue`,
+      { params },
+    );
+    return response.data.data || [];
+  }
+
+  async escalateOverdueReviews(
+    payload?: CleaningReviewEscalateRequest,
+  ): Promise<CleaningReviewEscalateResult | null> {
+    const response = await axios.post<ApiResponse<CleaningReviewEscalateResult>>(
+      `${API_BASE_URL}/reviews/escalate-overdue`,
+      payload || {},
     );
     return response.data.data || null;
   }

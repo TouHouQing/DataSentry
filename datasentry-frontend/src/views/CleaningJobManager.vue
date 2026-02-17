@@ -536,6 +536,14 @@
           </el-descriptions>
           <template #footer>
             <el-button @click="rollbackDialogVisible = false">关闭</el-button>
+            <el-button
+              type="warning"
+              :loading="rollbackLoading"
+              :disabled="!rollbackRun?.id"
+              @click="resolveRollbackConflicts"
+            >
+              处置冲突
+            </el-button>
             <el-button type="primary" :loading="rollbackLoading" @click="refreshRollback">
               刷新状态
             </el-button>
@@ -1356,6 +1364,43 @@
       rollbackRun.value = await cleaningService.getRollback(rollbackRun.value.id);
     } catch (error) {
       ElMessage.error('刷新回滚状态失败');
+    } finally {
+      rollbackLoading.value = false;
+    }
+  };
+
+  const resolveRollbackConflicts = async () => {
+    if (!rollbackRun.value?.id) {
+      return;
+    }
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '输入冲突等级（HIGH / MEDIUM / LOW，留空表示全部）',
+        '处置回滚冲突',
+        {
+          confirmButtonText: '开始处置',
+          cancelButtonText: '取消',
+        },
+      );
+      rollbackLoading.value = true;
+      const level = String(value || '')
+        .trim()
+        .toUpperCase();
+      const result = await cleaningService.resolveRollbackConflicts({
+        rollbackRunId: rollbackRun.value.id,
+        level: level || undefined,
+        limit: 200,
+      });
+      ElMessage.success(
+        `处置完成：候选 ${result?.totalCandidates || 0}，成功 ${result?.resolved || 0}，跳过 ${
+          result?.skipped || 0
+        }`,
+      );
+      rollbackRun.value = await cleaningService.getRollback(rollbackRun.value.id);
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error('处置回滚冲突失败');
+      }
     } finally {
       rollbackLoading.value = false;
     }
