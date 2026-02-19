@@ -401,6 +401,14 @@
                 </div>
               </el-form-item>
 
+              <el-form-item label="备份存储">
+                <el-select v-model="createForm.backupStorage" style="width: 240px">
+                  <el-option label="元数据库（METADB）" value="METADB" />
+                  <el-option label="业务库（BUSINESS_DB）" value="BUSINESS_DB" />
+                </el-select>
+                <div class="field-help">写回前备份的落盘位置，默认 METADB。</div>
+              </el-form-item>
+
               <el-form-item label="筛选条件">
                 <el-input
                   v-model="createForm.whereSql"
@@ -655,6 +663,7 @@
     writebackMode: 'NONE',
     reviewPolicy: 'NEVER',
     reviewBlockOnRisk: false,
+    backupStorage: 'METADB',
     whereSql: '',
     onlineFailClosedEnabled: true,
     onlineRequestTokenLimit: 4000,
@@ -1170,6 +1179,11 @@
 
     createForm.reviewBlockOnRisk =
       createForm.reviewPolicy === 'ALWAYS' || Boolean(backupPolicy.reviewBlockOnRisk);
+    const normalizedBackupStorage =
+      typeof backupPolicy.storage === 'string' && backupPolicy.storage.trim()
+        ? backupPolicy.storage.trim().toUpperCase()
+        : 'METADB';
+    createForm.backupStorage = normalizedBackupStorage === 'BUSINESS_DB' ? 'BUSINESS_DB' : 'METADB';
     createForm.onlineFailClosedEnabled = Number(job.onlineFailClosedEnabled ?? 1) === 1;
     createForm.onlineRequestTokenLimit =
       Number.isFinite(Number(job.onlineRequestTokenLimit)) &&
@@ -1303,6 +1317,7 @@
         reviewPolicy: createForm.reviewPolicy,
         backupPolicy: {
           reviewBlockOnRisk: createForm.reviewPolicy === 'ALWAYS' || createForm.reviewBlockOnRisk,
+          storage: createForm.backupStorage || 'METADB',
         },
         whereSql: createForm.whereSql || undefined,
         onlineFailClosedEnabled: createForm.onlineFailClosedEnabled ? 1 : 0,

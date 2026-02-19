@@ -1342,9 +1342,24 @@
     } catch (error) {
       return;
     }
+    let note;
+    try {
+      const noteInput = await ElMessageBox.prompt('请输入发布说明（可选）', '发布说明', {
+        confirmButtonText: '发布',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：修复误杀、调整阈值、放宽某类规则',
+      });
+      note = noteInput.value || undefined;
+    } catch (error) {
+      return;
+    }
     publishLoadingMap[policy.id] = true;
     try {
-      await cleaningService.publishPolicy(policy.id, {});
+      await cleaningService.publishPolicy(policy.id, {
+        publishMode: 'FULL',
+        note,
+        operator: 'admin',
+      });
       await loadPolicies();
       if (versionDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
         await loadPolicyVersions(policy.id, { asRefresh: true });
@@ -1378,11 +1393,18 @@
         cancelButtonText: '取消',
         inputPlaceholder: `policy-${policy.id}-gray`,
       });
+      const noteInput = await ElMessageBox.prompt('请输入灰度发布说明（可选）', '灰度说明', {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：仅验证手机号脱敏规则',
+      });
       grayPublishLoadingMap[policy.id] = true;
       await cleaningService.publishPolicy(policy.id, {
         publishMode: 'GRAY',
         grayRatio,
         experimentName: experimentInput.value || undefined,
+        note: noteInput.value || undefined,
+        operator: 'admin',
       });
       await loadPolicies();
       if (experimentDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
@@ -1420,10 +1442,23 @@
     } catch (error) {
       return;
     }
+    let note;
+    try {
+      const noteInput = await ElMessageBox.prompt('请输入回滚说明（可选）', '回滚说明', {
+        confirmButtonText: '回滚',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：新版本误杀率升高，回退到稳定版本',
+      });
+      note = noteInput.value || undefined;
+    } catch (error) {
+      return;
+    }
     rollbackVersionLoadingMap[version.id] = true;
     try {
       await cleaningService.rollbackPolicyVersion(policy.id, {
         versionId: version.id,
+        note,
+        operator: 'admin',
       });
       await Promise.all([loadPolicies(), loadPolicyVersions(policy.id, { asRefresh: true })]);
       ElMessage.success(`已回滚到版本 v${version.versionNo}`);
