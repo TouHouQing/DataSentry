@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyOfflineRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateCloneRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateRequest;
@@ -429,6 +430,36 @@ public class CleaningPolicyService {
 		return toVersionView(target);
 	}
 
+	@Transactional(rollbackFor = Exception.class)
+	public void offlinePolicy(Long policyId, CleaningPolicyOfflineRequest request) {
+		ensureGovernanceDependencies();
+		ensurePolicyGovernanceEnabled();
+		if (policyId == null || policyMapper.selectById(policyId) == null) {
+			throw new InvalidInputException("策略不存在");
+		}
+		LocalDateTime now = LocalDateTime.now();
+		List<CleaningPolicyVersion> activeVersions = policyVersionMapper
+			.selectList(new LambdaQueryWrapper<CleaningPolicyVersion>().eq(CleaningPolicyVersion::getPolicyId, policyId)
+				.in(CleaningPolicyVersion::getStatus, "PUBLISHED", "GRAY"));
+		if (activeVersions.isEmpty()) {
+			throw new InvalidInputException("策略当前没有可下线的发布版本");
+		}
+		policyVersionMapper.update(null,
+				new LambdaUpdateWrapper<CleaningPolicyVersion>().eq(CleaningPolicyVersion::getPolicyId, policyId)
+					.in(CleaningPolicyVersion::getStatus, "PUBLISHED", "GRAY")
+					.set(CleaningPolicyVersion::getStatus, "OFFLINE")
+					.set(CleaningPolicyVersion::getUpdatedTime, now));
+		releaseTicketMapper.insert(CleaningPolicyReleaseTicket.builder()
+			.policyId(policyId)
+			.versionId(activeVersions.get(0).getId())
+			.action("OFFLINE")
+			.publishMode(PUBLISH_MODE_FULL)
+			.note(request != null ? request.getNote() : null)
+			.operator(request != null ? request.getOperator() : null)
+			.createdTime(now)
+			.build());
+	}
+
 	public List<CleaningPolicyExperimentView> listPolicyExperiments(Long policyId, Integer limit) {
 		ensureGovernanceDependencies();
 		if (policyId == null || policyMapper.selectById(policyId) == null) {
@@ -438,7 +469,7 @@ public class CleaningPolicyService {
 		return releaseTicketMapper
 			.selectList(new LambdaQueryWrapper<CleaningPolicyReleaseTicket>()
 				.eq(CleaningPolicyReleaseTicket::getPolicyId, policyId)
-				.in(CleaningPolicyReleaseTicket::getAction, "PUBLISH", "PUBLISH_GRAY", "ROLLBACK")
+				.in(CleaningPolicyReleaseTicket::getAction, "PUBLISH", "PUBLISH_GRAY", "ROLLBACK", "OFFLINE")
 				.orderByDesc(CleaningPolicyReleaseTicket::getId)
 				.last("LIMIT " + safeLimit))
 			.stream()

@@ -2,6 +2,7 @@ package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyOfflineRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateCloneRequest;
@@ -111,6 +112,14 @@ public class CleaningPolicyController {
 			@RequestBody @Valid CleaningPolicyRollbackVersionRequest request) {
 		permissionGuard.require(CleaningPermissionCode.POLICY_PUBLISH);
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.rollbackToVersion(policyId, request)));
+	}
+
+	@PostMapping("/policies/{policyId}/offline")
+	public ResponseEntity<ApiResponse<Void>> offlinePolicy(@PathVariable Long policyId,
+			@RequestBody(required = false) CleaningPolicyOfflineRequest request) {
+		permissionGuard.require(CleaningPermissionCode.POLICY_PUBLISH);
+		policyService.offlinePolicy(policyId, request);
+		return ResponseEntity.ok(ApiResponse.success("success"));
 	}
 
 	@GetMapping("/policies/{policyId}/experiments")

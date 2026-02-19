@@ -20,6 +20,11 @@ export interface CleaningPolicyRollbackVersionRequest {
   operator?: string;
 }
 
+export interface CleaningPolicyOfflineRequest {
+  note?: string;
+  operator?: string;
+}
+
 export interface CleaningPolicyVersion {
   id: number;
   policyId: number;
@@ -926,6 +931,13 @@ class CleaningService {
       payload,
     );
     return response.data.data || null;
+  }
+
+  async offlinePolicy(policyId: number, payload?: CleaningPolicyOfflineRequest): Promise<void> {
+    await axios.post<ApiResponse<void>>(
+      `${API_BASE_URL}/policies/${policyId}/offline`,
+      payload || {},
+    );
   }
 
   async listPolicyExperiments(

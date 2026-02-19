@@ -71,6 +71,9 @@
                     >
                       灰度发布
                     </el-button>
+                    <el-button size="small" type="warning" @click="offlinePolicy(scope.row)">
+                      下线
+                    </el-button>
                     <el-button
                       size="small"
                       :loading="versionLoadingMap[scope.row.id]"
@@ -1173,6 +1176,7 @@
     const labels = {
       DRAFT: '草稿',
       PUBLISHED: '已发布',
+      OFFLINE: '已下线',
       ROLLED_BACK: '已回退',
     };
     return labels[status] || status || '-';
@@ -1181,6 +1185,9 @@
   const formatVersionStatusTag = status => {
     if (status === 'PUBLISHED') {
       return 'success';
+    }
+    if (status === 'OFFLINE') {
+      return 'warning';
     }
     if (status === 'ROLLED_BACK') {
       return 'info';
@@ -1421,6 +1428,49 @@
       }
     } finally {
       grayPublishLoadingMap[policy.id] = false;
+    }
+  };
+
+  const offlinePolicy = async policy => {
+    if (!policy?.id) {
+      return;
+    }
+    try {
+      await ElMessageBox.confirm(`确认下线策略「${policy.name}」的当前发布版本？`, '下线确认', {
+        type: 'warning',
+        confirmButtonText: '确认下线',
+        cancelButtonText: '取消',
+      });
+    } catch (error) {
+      return;
+    }
+    let note;
+    try {
+      const noteInput = await ElMessageBox.prompt('请输入下线说明（可选）', '下线说明', {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：策略需紧急停用，等待修复后重新发布',
+      });
+      note = noteInput.value || undefined;
+    } catch (error) {
+      return;
+    }
+    try {
+      await cleaningService.offlinePolicy(policy.id, {
+        note,
+        operator: 'admin',
+      });
+      await loadPolicies();
+      if (versionDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
+        await loadPolicyVersions(policy.id, { asRefresh: true });
+      }
+      if (experimentDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
+        await loadPolicyExperiments(policy.id);
+      }
+      ElMessage.success('策略已下线');
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '策略下线失败');
     }
   };
 
