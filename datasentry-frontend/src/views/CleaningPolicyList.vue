@@ -545,6 +545,13 @@
         <template #footer>
           <el-button @click="copilotDialogVisible = false">关闭</el-button>
           <el-button
+            type="warning"
+            :disabled="!copilotSuggestion || !selectedCopilotPolicy"
+            @click="applyCopilotSuggestionAndSave"
+          >
+            应用并保存
+          </el-button>
+          <el-button
             type="primary"
             :disabled="!copilotSuggestion || !selectedCopilotPolicy"
             @click="applyCopilotSuggestion"
@@ -1517,6 +1524,46 @@
     }
     copilotDialogVisible.value = false;
     ElMessage.success('已应用 AI 建议，请确认后保存策略');
+  };
+
+  const applyCopilotSuggestionAndSave = async () => {
+    const suggestion = copilotSuggestion.value;
+    const policy = selectedCopilotPolicy.value;
+    if (!suggestion || !policy?.id) {
+      return;
+    }
+    try {
+      const currentConfig = parseJsonSafe(policy.configJson);
+      const mergedConfig = {
+        ...currentConfig,
+        ...(suggestion.recommendedConfig || {}),
+      };
+      await cleaningService.updatePolicy(policy.id, {
+        name: policy.name,
+        description: policy.description,
+        enabled: policy.enabled,
+        defaultAction: suggestion.recommendedDefaultAction || policy.defaultAction || 'DETECT_ONLY',
+        config: mergedConfig,
+      });
+      const recommendedRuleIds = suggestion.recommendedRuleIds || [];
+      if (recommendedRuleIds.length > 0) {
+        const priorityMap = new Map();
+        (policy.rules || []).forEach(item => {
+          priorityMap.set(item.ruleId, item.priority ?? 50);
+        });
+        const bindings = recommendedRuleIds.map(ruleId => ({
+          ruleId,
+          priority: priorityMap.has(ruleId) ? priorityMap.get(ruleId) : 50,
+        }));
+        await cleaningService.updatePolicyRules(policy.id, bindings);
+      }
+      copilotDialogVisible.value = false;
+      await loadPolicies();
+      ElMessage.success('AI 建议已应用并保存');
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '应用 AI 建议失败');
+    }
   };
 
   const publishPolicyVersion = async policy => {
