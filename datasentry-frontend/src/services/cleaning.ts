@@ -50,6 +50,32 @@ export interface CleaningPolicyShadowSummaryView {
   latestSampleTime?: string;
 }
 
+export interface CleaningPolicyThresholdCalibrationView {
+  policyId: number;
+  policyName?: string;
+  feedbackSampleSize?: number;
+  disputeRate?: number;
+  shadowSampleSize?: number;
+  shadowDiffRate?: number;
+  currentBlockThreshold?: number;
+  currentReviewThreshold?: number;
+  currentL2Threshold?: number;
+  recommendedBlockThreshold?: number;
+  recommendedReviewThreshold?: number;
+  recommendedL2Threshold?: number;
+  recommendationLevel?: string;
+  reasons?: string[];
+  generatedTime?: string;
+}
+
+export interface CleaningPolicyThresholdCalibrationApplyResult {
+  policyId: number;
+  blockThreshold?: number;
+  reviewThreshold?: number;
+  l2Threshold?: number;
+  updatedTime?: string;
+}
+
 export interface CleaningPolicyVersion {
   id: number;
   policyId: number;
@@ -982,6 +1008,29 @@ class CleaningService {
   ): Promise<CleaningPolicyShadowSummaryView | null> {
     const response = await axios.get<ApiResponse<CleaningPolicyShadowSummaryView>>(
       `${API_BASE_URL}/policies/${policyId}/shadow-summary`,
+      { params },
+    );
+    return response.data.data || null;
+  }
+
+  async getPolicyThresholdCalibration(
+    policyId: number,
+    params?: { jobRunId?: number; agentId?: number; limit?: number },
+  ): Promise<CleaningPolicyThresholdCalibrationView | null> {
+    const response = await axios.get<ApiResponse<CleaningPolicyThresholdCalibrationView>>(
+      `${API_BASE_URL}/policies/${policyId}/threshold-calibration`,
+      { params },
+    );
+    return response.data.data || null;
+  }
+
+  async applyPolicyThresholdCalibration(
+    policyId: number,
+    params?: { jobRunId?: number; agentId?: number; limit?: number },
+  ): Promise<CleaningPolicyThresholdCalibrationApplyResult | null> {
+    const response = await axios.post<ApiResponse<CleaningPolicyThresholdCalibrationApplyResult>>(
+      `${API_BASE_URL}/policies/${policyId}/threshold-calibration/apply`,
+      null,
       { params },
     );
     return response.data.data || null;

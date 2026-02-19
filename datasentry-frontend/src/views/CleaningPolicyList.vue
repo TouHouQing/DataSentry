@@ -52,7 +52,7 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="600" fixed="right">
+                <el-table-column label="操作" width="700" fixed="right">
                   <template #default="scope">
                     <el-button
                       size="small"
@@ -86,6 +86,14 @@
                     </el-button>
                     <el-button size="small" type="info" @click="openCopilotDialog(scope.row)">
                       AI建议
+                    </el-button>
+                    <el-button
+                      size="small"
+                      type="warning"
+                      plain
+                      @click="openCalibrationDialog(scope.row)"
+                    >
+                      阈值校准
                     </el-button>
                     <el-button size="small" type="primary" @click="openPolicyDialog(scope.row)">
                       编辑
@@ -562,6 +570,74 @@
       </el-dialog>
 
       <el-dialog
+        v-model="calibrationDialogVisible"
+        :title="`阈值校准建议${selectedCalibrationPolicy ? ` - ${selectedCalibrationPolicy.name}` : ''}`"
+        width="760px"
+        :close-on-click-modal="false"
+      >
+        <div v-loading="calibrationLoading">
+          <el-empty v-if="!calibrationSuggestion" description="暂无校准建议" />
+          <template v-else>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="反馈样本">
+                {{ calibrationSuggestion.feedbackSampleSize || 0 }}
+              </el-descriptions-item>
+              <el-descriptions-item label="争议率">
+                {{ `${(Number(calibrationSuggestion.disputeRate || 0) * 100).toFixed(2)}%` }}
+              </el-descriptions-item>
+              <el-descriptions-item label="Shadow样本">
+                {{ calibrationSuggestion.shadowSampleSize || 0 }}
+              </el-descriptions-item>
+              <el-descriptions-item label="Shadow差异率">
+                {{ `${(Number(calibrationSuggestion.shadowDiffRate || 0) * 100).toFixed(2)}%` }}
+              </el-descriptions-item>
+              <el-descriptions-item label="建议档位">
+                {{ calibrationSuggestion.recommendationLevel || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="生成时间">
+                {{ formatDateTime(calibrationSuggestion.generatedTime) }}
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <el-divider>阈值对比（当前 → 建议）</el-divider>
+            <el-table
+              :data="calibrationThresholdRows"
+              size="small"
+              stripe
+              :show-header="true"
+              style="width: 100%"
+            >
+              <el-table-column prop="name" label="阈值项" min-width="180" />
+              <el-table-column prop="currentValue" label="当前值" width="160" />
+              <el-table-column prop="recommendedValue" label="建议值" width="160" />
+            </el-table>
+
+            <el-divider>建议说明</el-divider>
+            <el-alert
+              v-for="reason in calibrationSuggestion.reasons || []"
+              :key="reason"
+              type="info"
+              :closable="false"
+              show-icon
+              class="inline-alert"
+              :title="reason"
+            />
+          </template>
+        </div>
+        <template #footer>
+          <el-button @click="calibrationDialogVisible = false">关闭</el-button>
+          <el-button
+            type="primary"
+            :disabled="!calibrationSuggestion || !selectedCalibrationPolicy"
+            :loading="calibrationApplying"
+            @click="applyCalibrationSuggestion"
+          >
+            应用校准到草稿
+          </el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog
         v-model="templateDialogVisible"
         :title="templateDialogTitle"
         width="900px"
@@ -925,6 +1001,11 @@
   const copilotLoading = ref(false);
   const selectedCopilotPolicy = ref(null);
   const copilotSuggestion = ref(null);
+  const calibrationDialogVisible = ref(false);
+  const calibrationLoading = ref(false);
+  const calibrationApplying = ref(false);
+  const selectedCalibrationPolicy = ref(null);
+  const calibrationSuggestion = ref(null);
   const policyTemplates = ref([]);
   const loadingPolicyTemplates = ref(false);
   const templateDialogVisible = ref(false);
@@ -1011,6 +1092,35 @@
     const risk = matched.riskLevel ? `；风险：${matched.riskLevel}` : '';
     const recommended = matched.recommendedFor ? `；适用：${matched.recommendedFor}` : '';
     return `${matched.labelZh || matched.code}：${matched.description || ''}${effect}${risk}${recommended}`;
+  });
+
+  const calibrationThresholdRows = computed(() => {
+    if (!calibrationSuggestion.value) {
+      return [];
+    }
+    return [
+      {
+        name: 'Block 阈值',
+        currentValue: Number(calibrationSuggestion.value.currentBlockThreshold || 0).toFixed(3),
+        recommendedValue: Number(
+          calibrationSuggestion.value.recommendedBlockThreshold || 0,
+        ).toFixed(3),
+      },
+      {
+        name: 'Review 阈值',
+        currentValue: Number(calibrationSuggestion.value.currentReviewThreshold || 0).toFixed(3),
+        recommendedValue: Number(
+          calibrationSuggestion.value.recommendedReviewThreshold || 0,
+        ).toFixed(3),
+      },
+      {
+        name: 'L2 阈值',
+        currentValue: Number(calibrationSuggestion.value.currentL2Threshold || 0).toFixed(3),
+        recommendedValue: Number(calibrationSuggestion.value.recommendedL2Threshold || 0).toFixed(
+          3,
+        ),
+      },
+    ];
   });
 
   const ruleTypeSchema = computed(() => optionMeta.value.ruleTypeSchemas?.[ruleForm.ruleType]);
@@ -1477,6 +1587,46 @@
       copilotSuggestion.value = null;
     } finally {
       copilotLoading.value = false;
+    }
+  };
+
+  const openCalibrationDialog = async policy => {
+    if (!policy?.id) {
+      return;
+    }
+    selectedCalibrationPolicy.value = policy;
+    calibrationSuggestion.value = null;
+    calibrationDialogVisible.value = true;
+    calibrationLoading.value = true;
+    try {
+      calibrationSuggestion.value = await cleaningService.getPolicyThresholdCalibration(policy.id, {
+        limit: 500,
+      });
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '加载阈值校准建议失败');
+      calibrationSuggestion.value = null;
+    } finally {
+      calibrationLoading.value = false;
+    }
+  };
+
+  const applyCalibrationSuggestion = async () => {
+    const policy = selectedCalibrationPolicy.value;
+    if (!policy?.id) {
+      return;
+    }
+    calibrationApplying.value = true;
+    try {
+      await cleaningService.applyPolicyThresholdCalibration(policy.id, { limit: 500 });
+      calibrationDialogVisible.value = false;
+      await loadPolicies();
+      ElMessage.success('阈值校准已应用到策略草稿');
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '应用阈值校准失败');
+    } finally {
+      calibrationApplying.value = false;
     }
   };
 

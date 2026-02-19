@@ -11,6 +11,8 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyShadowSummaryView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyThresholdCalibrationApplyResult;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyThresholdCalibrationView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyVersionView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRuleRequest;
@@ -21,6 +23,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyCopilotService;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyShadowService;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyService;
+import com.touhouqing.datasentry.cleaning.service.CleaningPolicyThresholdCalibrationService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +42,8 @@ public class CleaningPolicyController {
 	private final CleaningPolicyCopilotService policyCopilotService;
 
 	private final CleaningPolicyShadowService policyShadowService;
+
+	private final CleaningPolicyThresholdCalibrationService policyThresholdCalibrationService;
 
 	private final CleaningPermissionGuard permissionGuard;
 
@@ -150,6 +155,22 @@ public class CleaningPolicyController {
 			@RequestParam(required = false) Integer limit) {
 		return ResponseEntity
 			.ok(ApiResponse.success("success", policyShadowService.summarize(policyId, versionId, limit)));
+	}
+
+	@GetMapping("/policies/{policyId}/threshold-calibration")
+	public ResponseEntity<ApiResponse<CleaningPolicyThresholdCalibrationView>> calibratePolicyThresholds(
+			@PathVariable Long policyId, @RequestParam(required = false) Long jobRunId,
+			@RequestParam(required = false) Long agentId, @RequestParam(required = false) Integer limit) {
+		return ResponseEntity.ok(ApiResponse.success("success",
+				policyThresholdCalibrationService.recommend(policyId, jobRunId, agentId, limit)));
+	}
+
+	@PostMapping("/policies/{policyId}/threshold-calibration/apply")
+	public ResponseEntity<ApiResponse<CleaningPolicyThresholdCalibrationApplyResult>> applyThresholdCalibration(
+			@PathVariable Long policyId, @RequestParam(required = false) Long jobRunId,
+			@RequestParam(required = false) Long agentId, @RequestParam(required = false) Integer limit) {
+		return ResponseEntity.ok(ApiResponse.success("success",
+				policyThresholdCalibrationService.apply(policyId, jobRunId, agentId, limit)));
 	}
 
 	@GetMapping("/rules")
