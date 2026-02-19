@@ -70,6 +70,24 @@ public class CleaningMetricsView {
 
 	private Long cloudInferenceP95LatencyMs;
 
+	private Long totalShadowCompareRecords;
+
+	private Long shadowDiffRecords;
+
+	private Double shadowDiffRate;
+
+	private Long totalRollbackRuns;
+
+	private Long rollbackSucceededRuns;
+
+	private Long rollbackFailedRuns;
+
+	private Long totalRollbackConflicts;
+
+	private Double rollbackSuccessRate;
+
+	private Double rollbackConflictRate;
+
 	private CleaningReviewOpsView reviewOps;
 
 }

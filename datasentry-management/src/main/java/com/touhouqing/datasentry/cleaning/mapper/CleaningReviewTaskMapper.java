@@ -49,6 +49,35 @@ public interface CleaningReviewTaskMapper extends BaseMapper<CleaningReviewTask>
 		return update(null, wrapper);
 	}
 
+	default int rejudgeIfPending(Long id, Integer version, String reviewer, String reason, String verdict,
+			String actionSuggested, String sanitizedPreview, String writebackPayloadJson, LocalDateTime now) {
+		LambdaUpdateWrapper<CleaningReviewTask> wrapper = new LambdaUpdateWrapper<CleaningReviewTask>()
+			.eq(CleaningReviewTask::getId, id)
+			.eq(CleaningReviewTask::getVersion, version)
+			.eq(CleaningReviewTask::getStatus, "PENDING")
+			.set(CleaningReviewTask::getReviewer, reviewer)
+			.set(CleaningReviewTask::getReviewReason, reason)
+			.set(CleaningReviewTask::getVerdict, verdict)
+			.set(CleaningReviewTask::getActionSuggested, actionSuggested)
+			.set(CleaningReviewTask::getSanitizedPreview, sanitizedPreview)
+			.set(CleaningReviewTask::getWritebackPayloadJson, writebackPayloadJson)
+			.set(CleaningReviewTask::getUpdatedTime, now)
+			.setSql("version = version + 1");
+		return update(null, wrapper);
+	}
+
+	default int transferIfPending(Long id, Integer version, String reviewer, String reason, LocalDateTime now) {
+		LambdaUpdateWrapper<CleaningReviewTask> wrapper = new LambdaUpdateWrapper<CleaningReviewTask>()
+			.eq(CleaningReviewTask::getId, id)
+			.eq(CleaningReviewTask::getVersion, version)
+			.eq(CleaningReviewTask::getStatus, "PENDING")
+			.set(CleaningReviewTask::getReviewer, reviewer)
+			.set(CleaningReviewTask::getReviewReason, reason)
+			.set(CleaningReviewTask::getUpdatedTime, now)
+			.setSql("version = version + 1");
+		return update(null, wrapper);
+	}
+
 	default int deleteExpired(LocalDateTime expireBefore, int limit) {
 		return delete(new LambdaQueryWrapper<CleaningReviewTask>().lt(CleaningReviewTask::getCreatedTime, expireBefore)
 			.orderByAsc(CleaningReviewTask::getId)

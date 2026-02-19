@@ -7,11 +7,17 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewOpsView;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningCostLedgerMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningDlqMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackConflictRecordMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningShadowCompareRecordMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningCostLedger;
 import com.touhouqing.datasentry.cleaning.model.CleaningDlqRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
+import com.touhouqing.datasentry.cleaning.model.CleaningRollbackConflictRecord;
+import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
+import com.touhouqing.datasentry.cleaning.model.CleaningShadowCompareRecord;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +48,12 @@ public class CleaningMetricsService {
 
 	private final CleaningReviewTaskMapper reviewTaskMapper;
 
+	private final CleaningShadowCompareRecordMapper shadowCompareRecordMapper;
+
+	private final CleaningRollbackRunMapper rollbackRunMapper;
+
+	private final CleaningRollbackConflictRecordMapper rollbackConflictRecordMapper;
+
 	private final CleaningOpsStateService opsStateService;
 
 	public CleaningMetricsView summary() {
@@ -71,6 +83,29 @@ public class CleaningMetricsService {
 				batchCost = batchCost.add(amount);
 			}
 		}
+		Long totalShadowCompareRecords = shadowCompareRecordMapper.selectCount(new LambdaQueryWrapper<>());
+		Long shadowDiffRecords = shadowCompareRecordMapper
+			.selectCount(new LambdaQueryWrapper<CleaningShadowCompareRecord>()
+				.ne(CleaningShadowCompareRecord::getDiffLevel, "NONE")
+				.isNotNull(CleaningShadowCompareRecord::getDiffLevel));
+		double shadowDiffRate = defaultLong(totalShadowCompareRecords) > 0
+				? (defaultLong(shadowDiffRecords) * 100.0D) / defaultLong(totalShadowCompareRecords) : 0D;
+
+		Long totalRollbackRuns = rollbackRunMapper.selectCount(new LambdaQueryWrapper<>());
+		Long rollbackSucceededRuns = rollbackRunMapper
+			.selectCount(new LambdaQueryWrapper<CleaningRollbackRun>().eq(CleaningRollbackRun::getStatus, "SUCCEEDED"));
+		Long rollbackFailedRuns = rollbackRunMapper
+			.selectCount(new LambdaQueryWrapper<CleaningRollbackRun>().eq(CleaningRollbackRun::getStatus, "FAILED"));
+		Long totalRollbackConflicts = rollbackConflictRecordMapper.selectCount(new LambdaQueryWrapper<>());
+		long conflictRunCount = rollbackConflictRecordMapper
+			.selectList(new LambdaQueryWrapper<CleaningRollbackConflictRecord>()
+				.select(CleaningRollbackConflictRecord::getRollbackRunId)
+				.groupBy(CleaningRollbackConflictRecord::getRollbackRunId))
+			.size();
+		double rollbackSuccessRate = defaultLong(totalRollbackRuns) > 0
+				? (defaultLong(rollbackSucceededRuns) * 100.0D) / defaultLong(totalRollbackRuns) : 0D;
+		double rollbackConflictRate = defaultLong(totalRollbackRuns) > 0
+				? (conflictRunCount * 100.0D) / defaultLong(totalRollbackRuns) : 0D;
 
 		return CleaningMetricsView.builder()
 			.totalRuns(defaultLong(totalRuns))
@@ -101,6 +136,15 @@ public class CleaningMetricsService {
 			.cloudFallbackCount(opsStateService.getCloudFallbackCount())
 			.cloudInferenceAvgLatencyMs(opsStateService.getCloudInferenceAvgLatencyMs())
 			.cloudInferenceP95LatencyMs(opsStateService.getCloudInferenceP95LatencyMs())
+			.totalShadowCompareRecords(defaultLong(totalShadowCompareRecords))
+			.shadowDiffRecords(defaultLong(shadowDiffRecords))
+			.shadowDiffRate(shadowDiffRate)
+			.totalRollbackRuns(defaultLong(totalRollbackRuns))
+			.rollbackSucceededRuns(defaultLong(rollbackSucceededRuns))
+			.rollbackFailedRuns(defaultLong(rollbackFailedRuns))
+			.totalRollbackConflicts(defaultLong(totalRollbackConflicts))
+			.rollbackSuccessRate(rollbackSuccessRate)
+			.rollbackConflictRate(rollbackConflictRate)
 			.reviewOps(reviewOps)
 			.build();
 	}

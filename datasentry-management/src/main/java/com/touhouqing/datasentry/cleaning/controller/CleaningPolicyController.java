@@ -4,6 +4,9 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateCloneRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyVersionView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyView;
@@ -33,6 +36,37 @@ public class CleaningPolicyController {
 	@GetMapping("/policies")
 	public ResponseEntity<ApiResponse<List<CleaningPolicyView>>> listPolicies() {
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.listPolicies()));
+	}
+
+	@GetMapping("/policy-templates")
+	public ResponseEntity<ApiResponse<List<CleaningPolicyTemplateView>>> listPolicyTemplates() {
+		return ResponseEntity.ok(ApiResponse.success("success", policyService.listPolicyTemplates()));
+	}
+
+	@PostMapping("/policy-templates")
+	public ResponseEntity<ApiResponse<CleaningPolicyTemplateView>> createPolicyTemplate(
+			@RequestBody @Valid CleaningPolicyTemplateRequest request) {
+		return ResponseEntity.ok(ApiResponse.success("success", policyService.createPolicyTemplate(request)));
+	}
+
+	@PutMapping("/policy-templates/{templateId}")
+	public ResponseEntity<ApiResponse<CleaningPolicyTemplateView>> updatePolicyTemplate(@PathVariable Long templateId,
+			@RequestBody @Valid CleaningPolicyTemplateRequest request) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", policyService.updatePolicyTemplate(templateId, request)));
+	}
+
+	@DeleteMapping("/policy-templates/{templateId}")
+	public ResponseEntity<ApiResponse<Void>> deletePolicyTemplate(@PathVariable Long templateId) {
+		policyService.deletePolicyTemplate(templateId);
+		return ResponseEntity.ok(ApiResponse.success("success"));
+	}
+
+	@PostMapping("/policy-templates/{templateId}/clone")
+	public ResponseEntity<ApiResponse<CleaningPolicyView>> clonePolicyTemplate(@PathVariable Long templateId,
+			@RequestBody @Valid CleaningPolicyTemplateCloneRequest request) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", policyService.clonePolicyTemplate(templateId, request)));
 	}
 
 	@PostMapping("/policies")

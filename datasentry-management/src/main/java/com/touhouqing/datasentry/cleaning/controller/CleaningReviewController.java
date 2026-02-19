@@ -6,6 +6,8 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewOptimizationView;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewRejudgeRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewTransferRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewFeedbackRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
@@ -85,6 +87,18 @@ public class CleaningReviewController {
 	public ResponseEntity<ApiResponse<CleaningReviewTask>> reject(@PathVariable Long id,
 			@RequestBody @Valid CleaningReviewDecisionRequest request) {
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.reject(id, request)));
+	}
+
+	@PostMapping("/reviews/{id}/rejudge")
+	public ResponseEntity<ApiResponse<CleaningReviewTask>> rejudge(@PathVariable Long id,
+			@RequestBody CleaningReviewRejudgeRequest request) {
+		return ResponseEntity.ok(ApiResponse.success("success", reviewService.rejudge(id, request)));
+	}
+
+	@PostMapping("/reviews/{id}/transfer")
+	public ResponseEntity<ApiResponse<CleaningReviewTask>> transfer(@PathVariable Long id,
+			@RequestBody CleaningReviewTransferRequest request) {
+		return ResponseEntity.ok(ApiResponse.success("success", reviewService.transfer(id, request)));
 	}
 
 	@PostMapping("/reviews/batch-approve")

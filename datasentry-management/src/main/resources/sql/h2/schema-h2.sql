@@ -318,6 +318,23 @@ CREATE TABLE IF NOT EXISTS datasentry_cleaning_policy_release_ticket (
   FOREIGN KEY (version_id) REFERENCES datasentry_cleaning_policy_version(id) ON DELETE CASCADE
 ) ENGINE=InnoDB COMMENT='清理策略发布工单表';
 
+-- 策略模板库
+CREATE TABLE IF NOT EXISTS datasentry_cleaning_policy_template (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL COMMENT '模板名称',
+  description TEXT COMMENT '模板描述',
+  category VARCHAR(128) DEFAULT NULL COMMENT '模板分类',
+  enabled TINYINT DEFAULT 1 COMMENT '是否启用',
+  default_action VARCHAR(50) DEFAULT 'DETECT_ONLY' COMMENT '默认动作',
+  config_json TEXT COMMENT '模板配置JSON',
+  rules_json TEXT COMMENT '模板规则绑定JSON',
+  created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  INDEX idx_category (category),
+  INDEX idx_enabled (enabled)
+) ENGINE=InnoDB COMMENT='清理策略模板库';
+
 -- 清理规则表
 CREATE TABLE IF NOT EXISTS datasentry_cleaning_rule (
   id BIGINT NOT NULL AUTO_INCREMENT,

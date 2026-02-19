@@ -93,6 +93,56 @@
             </el-card>
           </el-tab-pane>
 
+          <el-tab-pane label="模板库" name="templates">
+            <el-card>
+              <div class="rule-toolbar">
+                <el-button type="primary" :icon="Plus" size="large" @click="openTemplateDialog()">
+                  新增模板
+                </el-button>
+              </div>
+              <el-table
+                :data="policyTemplates"
+                style="width: 100%"
+                stripe
+                v-loading="loadingPolicyTemplates"
+              >
+                <el-table-column prop="id" label="ID" width="80" />
+                <el-table-column prop="name" label="模板名称" min-width="160" />
+                <el-table-column prop="category" label="分类" min-width="140" />
+                <el-table-column label="默认动作" min-width="220">
+                  <template #default="scope">
+                    {{ formatDefaultAction(scope.row.defaultAction) }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="规则数" width="100">
+                  <template #default="scope">
+                    {{ scope.row.rules?.length || 0 }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template #default="scope">
+                    <el-tag :type="scope.row.enabled ? 'success' : 'info'" size="small">
+                      {{ scope.row.enabled ? '启用' : '停用' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="320" fixed="right">
+                  <template #default="scope">
+                    <el-button size="small" type="success" @click="cloneFromTemplate(scope.row)">
+                      克隆为策略
+                    </el-button>
+                    <el-button size="small" type="primary" @click="openTemplateDialog(scope.row)">
+                      编辑
+                    </el-button>
+                    <el-button size="small" type="danger" @click="deleteTemplate(scope.row)">
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </el-tab-pane>
+
           <el-tab-pane label="规则" name="rules">
             <el-card>
               <div class="rule-toolbar">
@@ -411,6 +461,88 @@
       </el-dialog>
 
       <el-dialog
+        v-model="templateDialogVisible"
+        :title="templateDialogTitle"
+        width="900px"
+        :close-on-click-modal="false"
+      >
+        <el-form :model="templateForm" label-width="120px" label-position="left">
+          <el-form-item label="模板名称">
+            <el-input v-model="templateForm.name" placeholder="请输入模板名称" />
+          </el-form-item>
+          <el-form-item label="模板分类">
+            <el-input
+              v-model="templateForm.category"
+              placeholder="例如：客服文本 / 用户资料 / 营销内容"
+            />
+          </el-form-item>
+          <el-form-item label="模板描述">
+            <el-input v-model="templateForm.description" placeholder="请输入模板描述" />
+          </el-form-item>
+          <el-form-item label="默认动作">
+            <el-select
+              v-model="templateForm.defaultAction"
+              placeholder="请选择"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in defaultActionOptions"
+                :key="item.code"
+                :label="formatOptionLabel(item)"
+                :value="item.code"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="启用状态">
+            <el-switch v-model="templateForm.enabled" />
+          </el-form-item>
+          <el-form-item label="配置 JSON">
+            <el-input
+              v-model="templateForm.configJson"
+              type="textarea"
+              :rows="6"
+              placeholder="请输入模板配置 JSON，留空默认 {}"
+            />
+          </el-form-item>
+          <el-divider>模板规则绑定</el-divider>
+          <el-table :data="templateRuleSelections" style="width: 100%" height="260">
+            <el-table-column width="60">
+              <template #default="scope">
+                <el-checkbox v-model="scope.row.selected" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="规则名称" min-width="160" />
+            <el-table-column label="类型" width="180">
+              <template #default="scope">
+                {{ formatRuleType(scope.row.ruleType) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="类别" width="180">
+              <template #default="scope">
+                {{ formatRuleCategory(scope.row.category) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="优先级" width="140">
+              <template #default="scope">
+                <el-input-number
+                  v-model="scope.row.priority"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  size="small"
+                  :disabled="!scope.row.selected"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-form>
+        <template #footer>
+          <el-button @click="templateDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveTemplate">保存模板</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog
         v-model="ruleDialogVisible"
         :title="ruleDialogTitle"
         width="760px"
@@ -686,6 +818,10 @@
   const experimentDialogVisible = ref(false);
   const policyExperiments = ref([]);
   const loadingPolicyExperiments = ref(false);
+  const policyTemplates = ref([]);
+  const loadingPolicyTemplates = ref(false);
+  const templateDialogVisible = ref(false);
+  const templateDialogTitle = ref('新增模板');
 
   const uiMode = ref(readCleaningUiMode());
   const optionMeta = ref(mergeOptionsWithFallback(null));
@@ -706,6 +842,16 @@
     shadowSampleRatio: 0,
   });
   const ruleSelections = ref([]);
+  const templateRuleSelections = ref([]);
+  const templateForm = reactive({
+    id: null,
+    name: '',
+    description: '',
+    category: '',
+    defaultAction: 'DETECT_ONLY',
+    enabled: true,
+    configJson: '{}',
+  });
 
   const bindingDialogVisible = ref(false);
   const bindingForm = reactive({
@@ -1069,8 +1215,19 @@
     }
   };
 
+  const loadTemplates = async () => {
+    loadingPolicyTemplates.value = true;
+    try {
+      policyTemplates.value = await cleaningService.listPolicyTemplates();
+    } catch (error) {
+      ElMessage.error('加载模板失败');
+    } finally {
+      loadingPolicyTemplates.value = false;
+    }
+  };
+
   const loadAll = async () => {
-    await Promise.all([loadOptionMeta(), loadPolicies(), loadRules()]);
+    await Promise.all([loadOptionMeta(), loadPolicies(), loadRules(), loadTemplates()]);
   };
 
   const openPolicyDialog = policy => {
@@ -1345,6 +1502,110 @@
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') {
         ElMessage.error('保存策略失败');
+      }
+    }
+  };
+
+  const openTemplateDialog = template => {
+    const isEdit = !!template;
+    templateDialogTitle.value = isEdit ? '编辑模板' : '新增模板';
+    templateForm.id = isEdit ? template.id : null;
+    templateForm.name = isEdit ? template.name : '';
+    templateForm.description = isEdit ? template.description || '' : '';
+    templateForm.category = isEdit ? template.category || '' : '';
+    templateForm.defaultAction = isEdit ? template.defaultAction || 'DETECT_ONLY' : 'DETECT_ONLY';
+    templateForm.enabled = isEdit ? !!template.enabled : true;
+    templateForm.configJson = isEdit ? template.configJson || '{}' : '{}';
+    templateRuleSelections.value = rules.value.map(rule => {
+      const binding = template?.rules?.find(item => item.ruleId === rule.id);
+      return {
+        ruleId: rule.id,
+        name: rule.name,
+        ruleType: rule.ruleType,
+        category: rule.category,
+        selected: !!binding,
+        priority: binding?.priority ?? 0,
+      };
+    });
+    templateDialogVisible.value = true;
+  };
+
+  const saveTemplate = async () => {
+    if (!templateForm.name) {
+      ElMessage.warning('请输入模板名称');
+      return;
+    }
+    if (!templateForm.category) {
+      ElMessage.warning('请输入模板分类');
+      return;
+    }
+    let config = {};
+    try {
+      config = templateForm.configJson ? JSON.parse(templateForm.configJson) : {};
+    } catch (error) {
+      ElMessage.error('配置 JSON 格式错误');
+      return;
+    }
+    const payload = {
+      name: templateForm.name,
+      description: templateForm.description,
+      category: templateForm.category,
+      enabled: templateForm.enabled ? 1 : 0,
+      defaultAction: templateForm.defaultAction,
+      config,
+      rules: templateRuleSelections.value
+        .filter(item => item.selected)
+        .map(item => ({ ruleId: item.ruleId, priority: item.priority })),
+    };
+    try {
+      if (templateForm.id) {
+        await cleaningService.updatePolicyTemplate(templateForm.id, payload);
+      } else {
+        await cleaningService.createPolicyTemplate(payload);
+      }
+      templateDialogVisible.value = false;
+      await loadTemplates();
+      ElMessage.success('模板已保存');
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '模板保存失败');
+    }
+  };
+
+  const deleteTemplate = async template => {
+    try {
+      await ElMessageBox.confirm(`确认删除模板「${template.name}」?`, '删除确认', {
+        type: 'warning',
+      });
+      await cleaningService.deletePolicyTemplate(template.id);
+      await loadTemplates();
+      ElMessage.success('模板已删除');
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error('模板删除失败');
+      }
+    }
+  };
+
+  const cloneFromTemplate = async template => {
+    try {
+      const { value } = await ElMessageBox.prompt('请输入克隆后的策略名称', '克隆模板', {
+        confirmButtonText: '确认克隆',
+        cancelButtonText: '取消',
+        inputValue: `${template.name}-clone`,
+      });
+      const name = String(value || '').trim();
+      if (!name) {
+        ElMessage.error('策略名称不能为空');
+        return;
+      }
+      await cleaningService.clonePolicyTemplate(template.id, { name });
+      await loadPolicies();
+      ElMessage.success('模板已克隆为策略');
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        const message = normalizeApiError(error);
+        ElMessage.error(message || '克隆模板失败');
       }
     }
   };

@@ -6,6 +6,8 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewRejudgeRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewTransferRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningReviewStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewFeedbackRecordMapper;
@@ -209,6 +211,47 @@ public class CleaningReviewService {
 		appendReviewRecord(rejected, "REJECT");
 		appendFeedbackRecord(rejected, reviewer, reason);
 		return rejected;
+	}
+
+	public CleaningReviewTask rejudge(Long id, CleaningReviewRejudgeRequest request) {
+		if (request == null || request.getVersion() == null) {
+			throw new InvalidInputException("version 不能为空");
+		}
+		CleaningReviewTask task = requirePendingTask(id);
+		String reviewer = resolveReviewer(request != null ? request.getReviewer() : null);
+		String reason = request != null ? request.getReason() : null;
+		String verdict = normalizeText(request != null ? request.getVerdict() : null, task.getVerdict());
+		String actionSuggested = normalizeText(request != null ? request.getActionSuggested() : null,
+				task.getActionSuggested());
+		String sanitizedPreview = request != null && request.getSanitizedPreview() != null
+				? request.getSanitizedPreview() : task.getSanitizedPreview();
+		String writebackPayloadJson = request != null && request.getWritebackPayloadJson() != null
+				? request.getWritebackPayloadJson() : task.getWritebackPayloadJson();
+		LocalDateTime now = LocalDateTime.now();
+		int updated = reviewTaskMapper.rejudgeIfPending(id, request.getVersion(), reviewer, reason, verdict,
+				actionSuggested, sanitizedPreview, writebackPayloadJson, now);
+		if (updated == 0) {
+			throw new InvalidInputException("Task has been modified by others");
+		}
+		CleaningReviewTask latest = reviewTaskMapper.selectById(id);
+		appendFeedbackRecord(latest, reviewer, reason != null && !reason.isBlank() ? reason : "REJUDGED");
+		return latest;
+	}
+
+	public CleaningReviewTask transfer(Long id, CleaningReviewTransferRequest request) {
+		if (request == null || request.getVersion() == null) {
+			throw new InvalidInputException("version 不能为空");
+		}
+		requirePendingTask(id);
+		String operator = resolveReviewer(request.getReviewer());
+		String targetReviewer = resolveReviewer(request.getTargetReviewer());
+		String reason = normalizeTransferReason(request.getReason(), operator, targetReviewer);
+		LocalDateTime now = LocalDateTime.now();
+		int updated = reviewTaskMapper.transferIfPending(id, request.getVersion(), targetReviewer, reason, now);
+		if (updated == 0) {
+			throw new InvalidInputException("Task has been modified by others");
+		}
+		return reviewTaskMapper.selectById(id);
 	}
 
 	public CleaningReviewBatchResult batchApprove(CleaningReviewBatchRequest request) {
@@ -547,6 +590,20 @@ public class CleaningReviewService {
 
 	private String resolveReviewer(String reviewer) {
 		return reviewer != null && !reviewer.isBlank() ? reviewer : "admin";
+	}
+
+	private String normalizeText(String preferred, String fallback) {
+		if (preferred != null && !preferred.isBlank()) {
+			return preferred.trim();
+		}
+		return fallback;
+	}
+
+	private String normalizeTransferReason(String reason, String operator, String targetReviewer) {
+		if (reason != null && !reason.isBlank()) {
+			return reason;
+		}
+		return "TRANSFERRED by " + operator + " to " + targetReviewer;
 	}
 
 	private String resolveEscalateReason(String reason, int overdueHours) {

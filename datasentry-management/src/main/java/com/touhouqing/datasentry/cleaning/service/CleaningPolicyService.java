@@ -6,6 +6,9 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateCloneRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleItem;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyVersionView;
@@ -14,11 +17,13 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningRuleRequest;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyReleaseTicketMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyRuleMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyTemplateMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyVersionMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRuleMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyReleaseTicket;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyRule;
+import com.touhouqing.datasentry.cleaning.model.CleaningPolicyTemplate;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyVersion;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.RegexRuleConfig;
@@ -70,6 +75,8 @@ public class CleaningPolicyService {
 
 	private final CleaningPolicyReleaseTicketMapper releaseTicketMapper;
 
+	private final CleaningPolicyTemplateMapper policyTemplateMapper;
+
 	private final DataSentryProperties dataSentryProperties;
 
 	public CleaningPolicyService(CleaningPolicyMapper policyMapper, CleaningRuleMapper ruleMapper,
@@ -79,6 +86,7 @@ public class CleaningPolicyService {
 		this.policyRuleMapper = policyRuleMapper;
 		this.policyVersionMapper = null;
 		this.releaseTicketMapper = null;
+		this.policyTemplateMapper = null;
 		this.dataSentryProperties = new DataSentryProperties();
 	}
 
@@ -234,6 +242,93 @@ public class CleaningPolicyService {
 		}
 	}
 
+	public List<CleaningPolicyTemplateView> listPolicyTemplates() {
+		ensureTemplateDependency();
+		return policyTemplateMapper
+			.selectList(new LambdaQueryWrapper<CleaningPolicyTemplate>().orderByDesc(CleaningPolicyTemplate::getId))
+			.stream()
+			.map(this::toTemplateView)
+			.toList();
+	}
+
+	public CleaningPolicyTemplateView createPolicyTemplate(CleaningPolicyTemplateRequest request) {
+		ensureTemplateDependency();
+		LocalDateTime now = LocalDateTime.now();
+		CleaningPolicyTemplate template = CleaningPolicyTemplate.builder()
+			.name(required(request.getName(), "模板名称不能为空"))
+			.description(request.getDescription())
+			.category(required(request.getCategory(), "模板分类不能为空"))
+			.enabled(request.getEnabled() != null ? request.getEnabled() : 1)
+			.defaultAction(request.getDefaultAction() != null ? request.getDefaultAction() : "DETECT_ONLY")
+			.configJson(toJson(request.getConfig()))
+			.rulesJson(toJson(normalizeTemplateRules(request.getRules())))
+			.createdTime(now)
+			.updatedTime(now)
+			.build();
+		policyTemplateMapper.insert(template);
+		return toTemplateView(template);
+	}
+
+	public CleaningPolicyTemplateView updatePolicyTemplate(Long templateId, CleaningPolicyTemplateRequest request) {
+		ensureTemplateDependency();
+		CleaningPolicyTemplate existing = policyTemplateMapper.selectById(templateId);
+		if (existing == null) {
+			throw new InvalidInputException("模板不存在");
+		}
+		policyTemplateMapper.update(null,
+				new LambdaUpdateWrapper<CleaningPolicyTemplate>().eq(CleaningPolicyTemplate::getId, templateId)
+					.set(CleaningPolicyTemplate::getName, required(request.getName(), "模板名称不能为空"))
+					.set(CleaningPolicyTemplate::getDescription, request.getDescription())
+					.set(CleaningPolicyTemplate::getCategory, required(request.getCategory(), "模板分类不能为空"))
+					.set(CleaningPolicyTemplate::getEnabled, request.getEnabled() != null ? request.getEnabled() : 1)
+					.set(CleaningPolicyTemplate::getDefaultAction,
+							request.getDefaultAction() != null ? request.getDefaultAction() : "DETECT_ONLY")
+					.set(CleaningPolicyTemplate::getConfigJson, toJson(request.getConfig()))
+					.set(CleaningPolicyTemplate::getRulesJson, toJson(normalizeTemplateRules(request.getRules())))
+					.set(CleaningPolicyTemplate::getUpdatedTime, LocalDateTime.now()));
+		return toTemplateView(policyTemplateMapper.selectById(templateId));
+	}
+
+	public void deletePolicyTemplate(Long templateId) {
+		ensureTemplateDependency();
+		policyTemplateMapper.deleteById(templateId);
+	}
+
+	@Transactional(rollbackFor = Exception.class)
+	public CleaningPolicyView clonePolicyTemplate(Long templateId, CleaningPolicyTemplateCloneRequest request) {
+		ensureTemplateDependency();
+		CleaningPolicyTemplate template = policyTemplateMapper.selectById(templateId);
+		if (template == null) {
+			throw new InvalidInputException("模板不存在");
+		}
+		LocalDateTime now = LocalDateTime.now();
+		CleaningPolicy policy = CleaningPolicy.builder()
+			.name(required(request != null ? request.getName() : null, "克隆后的策略名称不能为空"))
+			.description(request != null && request.getDescription() != null ? request.getDescription()
+					: template.getDescription())
+			.enabled(request != null && request.getEnabled() != null ? request.getEnabled()
+					: (template.getEnabled() != null ? template.getEnabled() : 1))
+			.defaultAction(template.getDefaultAction() != null ? template.getDefaultAction() : "DETECT_ONLY")
+			.configJson(template.getConfigJson())
+			.createdTime(now)
+			.updatedTime(now)
+			.build();
+		policyMapper.insert(policy);
+		List<CleaningPolicyRuleItem> rules = parseTemplateRules(template.getRulesJson());
+		updatePolicyRules(policy.getId(), CleaningPolicyRuleUpdateRequest.builder().rules(rules).build());
+		return CleaningPolicyView.builder()
+			.id(policy.getId())
+			.name(policy.getName())
+			.description(policy.getDescription())
+			.enabled(policy.getEnabled())
+			.defaultAction(policy.getDefaultAction())
+			.configJson(policy.getConfigJson())
+			.createdTime(policy.getCreatedTime())
+			.updatedTime(policy.getUpdatedTime())
+			.rules(rules)
+			.build();
+	}
+
 	public List<CleaningPolicyVersionView> listPolicyVersions(Long policyId) {
 		ensureGovernanceDependencies();
 		if (policyMapper.selectById(policyId) == null) {
@@ -369,6 +464,70 @@ public class CleaningPolicyService {
 		return value;
 	}
 
+	private List<CleaningPolicyRuleItem> normalizeTemplateRules(List<CleaningPolicyRuleItem> rules) {
+		if (rules == null || rules.isEmpty()) {
+			return List.of();
+		}
+		return rules.stream()
+			.filter(item -> item != null && item.getRuleId() != null)
+			.map(item -> CleaningPolicyRuleItem.builder()
+				.ruleId(item.getRuleId())
+				.priority(item.getPriority() != null ? item.getPriority() : 0)
+				.build())
+			.toList();
+	}
+
+	private List<CleaningPolicyRuleItem> parseTemplateRules(String rulesJson) {
+		if (rulesJson == null || rulesJson.isBlank()) {
+			return List.of();
+		}
+		try {
+			List<?> raw = JsonUtil.getObjectMapper().readValue(rulesJson, List.class);
+			if (raw == null || raw.isEmpty()) {
+				return List.of();
+			}
+			List<CleaningPolicyRuleItem> result = new ArrayList<>();
+			for (Object item : raw) {
+				if (!(item instanceof Map<?, ?> map)) {
+					continue;
+				}
+				Object ruleIdRaw = map.get("ruleId");
+				if (ruleIdRaw == null) {
+					continue;
+				}
+				long ruleId = Long.parseLong(String.valueOf(ruleIdRaw));
+				if (ruleId <= 0) {
+					continue;
+				}
+				Object priorityRaw = map.get("priority");
+				int priority = priorityRaw != null ? Integer.parseInt(String.valueOf(priorityRaw)) : 0;
+				result.add(CleaningPolicyRuleItem.builder().ruleId(ruleId).priority(priority).build());
+			}
+			return result;
+		}
+		catch (Exception e) {
+			return List.of();
+		}
+	}
+
+	private CleaningPolicyTemplateView toTemplateView(CleaningPolicyTemplate template) {
+		if (template == null) {
+			return null;
+		}
+		return CleaningPolicyTemplateView.builder()
+			.id(template.getId())
+			.name(template.getName())
+			.description(template.getDescription())
+			.category(template.getCategory())
+			.enabled(template.getEnabled())
+			.defaultAction(template.getDefaultAction())
+			.configJson(template.getConfigJson())
+			.rules(parseTemplateRules(template.getRulesJson()))
+			.createdTime(template.getCreatedTime())
+			.updatedTime(template.getUpdatedTime())
+			.build();
+	}
+
 	private void ensurePolicyGovernanceEnabled() {
 		if (!dataSentryProperties.getCleaning().isPolicyGovernanceEnabled()) {
 			throw new InvalidInputException("策略治理能力未开启");
@@ -378,6 +537,12 @@ public class CleaningPolicyService {
 	private void ensureGovernanceDependencies() {
 		if (policyVersionMapper == null || releaseTicketMapper == null) {
 			throw new InvalidInputException("策略治理依赖未初始化");
+		}
+	}
+
+	private void ensureTemplateDependency() {
+		if (policyTemplateMapper == null) {
+			throw new InvalidInputException("策略模板依赖未初始化");
 		}
 	}
 

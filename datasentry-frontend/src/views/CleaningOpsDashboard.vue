@@ -5,7 +5,7 @@
         <div class="content-header">
           <div class="header-info">
             <h1 class="content-title">清理运维看板</h1>
-            <p class="content-subtitle">预算、成本、DLQ、计价同步与告警集中观测</p>
+            <p class="content-subtitle">预算、成本、DLQ、影子对比、回滚与告警集中观测</p>
           </div>
           <div class="header-actions">
             <el-button :icon="Refresh" size="large" :loading="loadingAll" @click="loadAll">
@@ -92,6 +92,55 @@
         </el-row>
 
         <el-row :gutter="16" class="metrics-row">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">Shadow 对比总量</div>
+              <div class="metric-value">{{ metrics.totalShadowCompareRecords || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card warning">
+              <div class="metric-label">Shadow 差异（数量/占比）</div>
+              <div class="metric-value tiny-value">
+                {{ metrics.shadowDiffRecords || 0 }} / {{ formatPercent(metrics.shadowDiffRate) }}
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">回滚任务总数</div>
+              <div class="metric-value">{{ metrics.totalRollbackRuns || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">回滚成功率</div>
+              <div class="metric-value">{{ formatPercent(metrics.rollbackSuccessRate) }}</div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" class="metrics-row">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">回滚成功 / 失败</div>
+              <div class="metric-value tiny-value">
+                {{ metrics.rollbackSucceededRuns || 0 }} / {{ metrics.rollbackFailedRuns || 0 }}
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card warning">
+              <div class="metric-label">回滚冲突总量</div>
+              <div class="metric-value">{{ metrics.totalRollbackConflicts || 0 }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="hover" class="metric-card warning">
+              <div class="metric-label">回滚冲突率</div>
+              <div class="metric-value">{{ formatPercent(metrics.rollbackConflictRate) }}</div>
+            </el-card>
+          </el-col>
           <el-col :xs="24" :sm="12" :md="6">
             <el-card shadow="never" class="metric-card">
               <div class="metric-label">L2 提供方状态</div>
@@ -372,6 +421,15 @@
     cloudFallbackCount: 0,
     cloudInferenceAvgLatencyMs: 0,
     cloudInferenceP95LatencyMs: 0,
+    totalShadowCompareRecords: 0,
+    shadowDiffRecords: 0,
+    shadowDiffRate: 0,
+    totalRollbackRuns: 0,
+    rollbackSucceededRuns: 0,
+    rollbackFailedRuns: 0,
+    totalRollbackConflicts: 0,
+    rollbackSuccessRate: 0,
+    rollbackConflictRate: 0,
     reviewOps: {
       pendingTasks: 0,
       pendingHighRiskTasks: 0,

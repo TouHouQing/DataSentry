@@ -75,6 +75,35 @@ export interface CleaningPolicyRequest {
   config?: Record<string, unknown>;
 }
 
+export interface CleaningPolicyTemplateView {
+  id: number;
+  name: string;
+  description?: string;
+  category?: string;
+  enabled?: number;
+  defaultAction?: string;
+  configJson?: string;
+  rules?: CleaningPolicyRuleItem[];
+  createdTime?: string;
+  updatedTime?: string;
+}
+
+export interface CleaningPolicyTemplateRequest {
+  name: string;
+  description?: string;
+  category: string;
+  enabled?: number;
+  defaultAction?: string;
+  config?: Record<string, unknown>;
+  rules?: CleaningPolicyRuleItem[];
+}
+
+export interface CleaningPolicyTemplateCloneRequest {
+  name: string;
+  description?: string;
+  enabled?: number;
+}
+
 export interface CleaningRuleRequest {
   name: string;
   ruleType: string;
@@ -111,6 +140,23 @@ export interface CleaningReviewDecisionRequest {
   version: number;
   reason?: string;
   reviewer?: string;
+}
+
+export interface CleaningReviewRejudgeRequest {
+  version: number;
+  reason?: string;
+  reviewer?: string;
+  verdict?: string;
+  actionSuggested?: string;
+  sanitizedPreview?: string;
+  writebackPayloadJson?: string;
+}
+
+export interface CleaningReviewTransferRequest {
+  version: number;
+  reason?: string;
+  reviewer?: string;
+  targetReviewer?: string;
 }
 
 export interface CleaningReviewBatchRequest {
@@ -330,6 +376,15 @@ export interface CleaningMetricsView {
   cloudFallbackCount?: number;
   cloudInferenceAvgLatencyMs?: number;
   cloudInferenceP95LatencyMs?: number;
+  totalShadowCompareRecords?: number;
+  shadowDiffRecords?: number;
+  shadowDiffRate?: number;
+  totalRollbackRuns?: number;
+  rollbackSucceededRuns?: number;
+  rollbackFailedRuns?: number;
+  totalRollbackConflicts?: number;
+  rollbackSuccessRate?: number;
+  rollbackConflictRate?: number;
   reviewOps?: CleaningReviewOpsView;
 }
 
@@ -793,6 +848,49 @@ class CleaningService {
     return response.data.data || null;
   }
 
+  async listPolicyTemplates(): Promise<CleaningPolicyTemplateView[]> {
+    const response = await axios.get<ApiResponse<CleaningPolicyTemplateView[]>>(
+      `${API_BASE_URL}/policy-templates`,
+    );
+    return response.data.data || [];
+  }
+
+  async createPolicyTemplate(
+    payload: CleaningPolicyTemplateRequest,
+  ): Promise<CleaningPolicyTemplateView | null> {
+    const response = await axios.post<ApiResponse<CleaningPolicyTemplateView>>(
+      `${API_BASE_URL}/policy-templates`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
+  async updatePolicyTemplate(
+    templateId: number,
+    payload: CleaningPolicyTemplateRequest,
+  ): Promise<CleaningPolicyTemplateView | null> {
+    const response = await axios.put<ApiResponse<CleaningPolicyTemplateView>>(
+      `${API_BASE_URL}/policy-templates/${templateId}`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
+  async deletePolicyTemplate(templateId: number): Promise<void> {
+    await axios.delete<ApiResponse<void>>(`${API_BASE_URL}/policy-templates/${templateId}`);
+  }
+
+  async clonePolicyTemplate(
+    templateId: number,
+    payload: CleaningPolicyTemplateCloneRequest,
+  ): Promise<CleaningPolicyView | null> {
+    const response = await axios.post<ApiResponse<CleaningPolicyView>>(
+      `${API_BASE_URL}/policy-templates/${templateId}/clone`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
   async deletePolicy(policyId: number): Promise<void> {
     await axios.delete<ApiResponse<void>>(`${API_BASE_URL}/policies/${policyId}`);
   }
@@ -896,6 +994,28 @@ class CleaningService {
   ): Promise<CleaningReviewTask | null> {
     const response = await axios.post<ApiResponse<CleaningReviewTask>>(
       `${API_BASE_URL}/reviews/${taskId}/reject`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
+  async rejudgeReview(
+    taskId: number,
+    payload: CleaningReviewRejudgeRequest,
+  ): Promise<CleaningReviewTask | null> {
+    const response = await axios.post<ApiResponse<CleaningReviewTask>>(
+      `${API_BASE_URL}/reviews/${taskId}/rejudge`,
+      payload,
+    );
+    return response.data.data || null;
+  }
+
+  async transferReview(
+    taskId: number,
+    payload: CleaningReviewTransferRequest,
+  ): Promise<CleaningReviewTask | null> {
+    const response = await axios.post<ApiResponse<CleaningReviewTask>>(
+      `${API_BASE_URL}/reviews/${taskId}/transfer`,
       payload,
     );
     return response.data.data || null;

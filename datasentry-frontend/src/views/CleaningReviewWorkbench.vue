@@ -138,10 +138,25 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
+            <el-table-column label="操作" width="420" fixed="right">
               <template #default="scope">
                 <el-button size="small" type="primary" @click="openDetail(scope.row)">
                   详情
+                </el-button>
+                <el-button
+                  size="small"
+                  type="warning"
+                  :disabled="scope.row.status !== 'PENDING'"
+                  @click="handleRejudge(scope.row)"
+                >
+                  改判
+                </el-button>
+                <el-button
+                  size="small"
+                  :disabled="scope.row.status !== 'PENDING'"
+                  @click="handleTransfer(scope.row)"
+                >
+                  转交
                 </el-button>
                 <el-button
                   size="small"
@@ -267,6 +282,8 @@
     HARD_DELETE: '硬删除',
     BLOCK_ONLY: '仅阻断',
     REVIEW_ONLY: '仅人审',
+    REVIEW_THEN_WRITEBACK: '人审后写回',
+    REVIEW_ROLLBACK_CONFLICT: '冲突转审',
   };
 
   const formatReviewStatus = status => reviewStatusLabelMap[status] || status || '-';
@@ -369,6 +386,68 @@
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') {
         ElMessage.error('拒绝失败');
+      }
+    }
+  };
+
+  const handleRejudge = async row => {
+    try {
+      const actionInput = await ElMessageBox.prompt(
+        '请输入改判后的动作（WRITEBACK / SOFT_DELETE / HARD_DELETE / BLOCK_ONLY / REVIEW_ONLY）',
+        '改判',
+        {
+          confirmButtonText: '下一步',
+          cancelButtonText: '取消',
+          inputValue: row.actionSuggested || 'WRITEBACK',
+        },
+      );
+      const actionSuggested = String(actionInput.value || '')
+        .trim()
+        .toUpperCase();
+      if (!actionSuggested) {
+        ElMessage.error('改判动作不能为空');
+        return;
+      }
+      const reason = await promptReason('改判原因（可选）');
+      await cleaningService.rejudgeReview(row.id, {
+        version: row.version,
+        reason,
+        reviewer: 'admin',
+        actionSuggested,
+      });
+      await loadReviews();
+      ElMessage.success('改判完成');
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error('改判失败');
+      }
+    }
+  };
+
+  const handleTransfer = async row => {
+    try {
+      const targetInput = await ElMessageBox.prompt('请输入目标审核人', '转交', {
+        confirmButtonText: '下一步',
+        cancelButtonText: '取消',
+        inputValue: row.reviewer || 'reviewer',
+      });
+      const targetReviewer = String(targetInput.value || '').trim();
+      if (!targetReviewer) {
+        ElMessage.error('目标审核人不能为空');
+        return;
+      }
+      const reason = await promptReason('转交原因（可选）');
+      await cleaningService.transferReview(row.id, {
+        version: row.version,
+        reason,
+        reviewer: 'admin',
+        targetReviewer,
+      });
+      await loadReviews();
+      ElMessage.success('已转交');
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error('转交失败');
       }
     }
   };
