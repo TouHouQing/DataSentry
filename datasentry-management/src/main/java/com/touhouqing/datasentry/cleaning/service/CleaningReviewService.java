@@ -141,6 +141,19 @@ public class CleaningReviewService {
 		return reviewTaskMapper.selectList(wrapper);
 	}
 
+	public boolean requiresHardDeletePermission(Long taskId) {
+		if (taskId == null) {
+			return false;
+		}
+		CleaningReviewTask task = reviewTaskMapper.selectById(taskId);
+		return task != null && "HARD_DELETE".equals(task.getActionSuggested());
+	}
+
+	public boolean requiresHardDeletePermission(CleaningReviewBatchRequest request) {
+		List<CleaningReviewTask> targets = resolveBatchTargets(request);
+		return targets.stream().anyMatch(task -> "HARD_DELETE".equals(task.getActionSuggested()));
+	}
+
 	public CleaningReviewEscalateResult escalateOverduePending(CleaningReviewEscalateRequest request) {
 		int safeHours = resolveEscalateHours(request != null ? request.getOverdueHours() : null);
 		int safeLimit = resolveEscalateLimit(request != null ? request.getLimit() : null);
@@ -306,7 +319,8 @@ public class CleaningReviewService {
 		}
 		Map<String, Object> beforeRow = parseJsonMap(task.getBeforeRowJson());
 		Map<String, Object> writebackPayload = parseJsonMap(task.getWritebackPayloadJson());
-		if (beforeRow.isEmpty() || writebackPayload.isEmpty()) {
+		boolean hardDeleteAction = "HARD_DELETE".equals(task.getActionSuggested());
+		if (beforeRow.isEmpty() || (!hardDeleteAction && writebackPayload.isEmpty())) {
 			return completeApprovedTask(task, CleaningReviewStatus.FAILED.name(), reviewer, reason, false, null);
 		}
 		PkRef pkRef = resolvePk(task.getPkJson());
@@ -330,7 +344,12 @@ public class CleaningReviewService {
 				return completeApprovedTask(task, CleaningReviewStatus.CONFLICT.name(), reviewer, reason, false, null);
 			}
 			backupBeforeRow(task, beforeRow);
-			executeUpdate(connection, task.getTableName(), writebackPayload, pkRef);
+			if (hardDeleteAction) {
+				executeDelete(connection, task.getTableName(), pkRef);
+			}
+			else {
+				executeUpdate(connection, task.getTableName(), writebackPayload, pkRef);
+			}
 			return completeApprovedTask(task, CleaningReviewStatus.WRITTEN.name(), reviewer, reason, true,
 					task.getActionSuggested());
 		}
@@ -413,6 +432,14 @@ public class CleaningReviewService {
 				statement.setObject(index++, value);
 			}
 			bindPkValues(statement, index, pkRef);
+			statement.executeUpdate();
+		}
+	}
+
+	private void executeDelete(Connection connection, String tableName, PkRef pkRef) throws Exception {
+		String sql = "DELETE FROM " + tableName + " WHERE " + buildPkWhereClause(pkRef);
+		try (PreparedStatement statement = connection.prepareStatement(sql)) {
+			bindPkValues(statement, 1, pkRef);
 			statement.executeUpdate();
 		}
 	}

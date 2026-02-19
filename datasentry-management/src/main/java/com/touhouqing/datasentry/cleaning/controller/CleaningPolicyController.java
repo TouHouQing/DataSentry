@@ -1,6 +1,7 @@
 package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
@@ -76,6 +77,12 @@ public class CleaningPolicyController {
 			@RequestBody @Valid CleaningPolicyRollbackVersionRequest request) {
 		permissionGuard.require(CleaningPermissionCode.POLICY_PUBLISH);
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.rollbackToVersion(policyId, request)));
+	}
+
+	@GetMapping("/policies/{policyId}/experiments")
+	public ResponseEntity<ApiResponse<List<CleaningPolicyExperimentView>>> listPolicyExperiments(
+			@PathVariable Long policyId, @RequestParam(required = false) Integer limit) {
+		return ResponseEntity.ok(ApiResponse.success("success", policyService.listPolicyExperiments(policyId, limit)));
 	}
 
 	@GetMapping("/rules")

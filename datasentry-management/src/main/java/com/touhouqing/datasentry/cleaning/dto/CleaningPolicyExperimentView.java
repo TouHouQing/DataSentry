@@ -1,8 +1,5 @@
-package com.touhouqing.datasentry.cleaning.model;
+package com.touhouqing.datasentry.cleaning.dto;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,11 +12,9 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("datasentry_cleaning_policy_release_ticket")
-public class CleaningPolicyReleaseTicket {
+public class CleaningPolicyExperimentView {
 
-	@TableId(type = IdType.AUTO)
-	private Long id;
+	private Long ticketId;
 
 	private Long policyId;
 

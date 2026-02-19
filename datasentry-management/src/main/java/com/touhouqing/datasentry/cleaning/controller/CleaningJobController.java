@@ -123,6 +123,9 @@ public class CleaningJobController {
 				|| (writebackMode != null && !"NONE".equalsIgnoreCase(writebackMode));
 		if (writebackRequested) {
 			permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
+			if ("HARD_DELETE".equalsIgnoreCase(writebackMode)) {
+				permissionGuard.require(CleaningPermissionCode.DELETE_HARD);
+			}
 		}
 	}
 

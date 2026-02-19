@@ -7,6 +7,9 @@ export interface CleaningPolicyRuleItem {
 }
 
 export interface CleaningPolicyPublishRequest {
+  publishMode?: 'FULL' | 'GRAY';
+  grayRatio?: number;
+  experimentName?: string;
   note?: string;
   operator?: string;
 }
@@ -25,6 +28,19 @@ export interface CleaningPolicyVersion {
   defaultAction?: string;
   createdTime?: string;
   updatedTime?: string;
+}
+
+export interface CleaningPolicyExperimentView {
+  ticketId: number;
+  policyId: number;
+  versionId: number;
+  action: string;
+  publishMode?: string;
+  grayRatio?: number;
+  experimentName?: string;
+  note?: string;
+  operator?: string;
+  createdTime?: string;
 }
 
 export interface CleaningPolicyView {
@@ -423,10 +439,17 @@ export interface CleaningRollbackRun {
   totalFailed?: number;
   verifyStatus?: string;
   conflictLevelSummary?: string;
+  selectorJson?: string;
   startedTime?: string;
   endedTime?: string;
   createdTime?: string;
   updatedTime?: string;
+}
+
+export interface CleaningRollbackCreateRequest {
+  backupRecordIds?: number[];
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface CleaningRollbackConflictRecord {
@@ -460,6 +483,28 @@ export interface CleaningEvidenceRollbackView {
   conflictRecordsTruncated?: boolean;
   verifyRecords?: Array<Record<string, unknown>>;
   conflictRecords?: Array<Record<string, unknown>>;
+}
+
+export interface CleaningReviewOptimizationDisputedRule {
+  category: string;
+  actionSuggested: string;
+  total: number;
+  rejected: number;
+  conflict: number;
+  disputeRate: number;
+}
+
+export interface CleaningReviewOptimizationThresholdSuggestion {
+  category: string;
+  suggestion: string;
+  reason: string;
+  disputeRate: number;
+}
+
+export interface CleaningReviewOptimizationView {
+  totalSamples: number;
+  disputedRules: CleaningReviewOptimizationDisputedRule[];
+  thresholdSuggestions: CleaningReviewOptimizationThresholdSuggestion[];
 }
 
 export interface CleaningEvidenceBundleView {
@@ -678,9 +723,13 @@ class CleaningService {
     return response.data.data || null;
   }
 
-  async createRollback(runId: number): Promise<CleaningRollbackRun | null> {
+  async createRollback(
+    runId: number,
+    payload?: CleaningRollbackCreateRequest,
+  ): Promise<CleaningRollbackRun | null> {
     const response = await axios.post<ApiResponse<CleaningRollbackRun>>(
       `${API_BASE_URL}/job-runs/${runId}/rollback`,
+      payload || {},
     );
     return response.data.data || null;
   }
@@ -774,6 +823,17 @@ class CleaningService {
       payload,
     );
     return response.data.data || null;
+  }
+
+  async listPolicyExperiments(
+    policyId: number,
+    params?: { limit?: number },
+  ): Promise<CleaningPolicyExperimentView[]> {
+    const response = await axios.get<ApiResponse<CleaningPolicyExperimentView[]>>(
+      `${API_BASE_URL}/policies/${policyId}/experiments`,
+      { params },
+    );
+    return response.data.data || [];
   }
 
   async listRules(): Promise<CleaningRule[]> {
@@ -873,6 +933,18 @@ class CleaningService {
     const response = await axios.post<ApiResponse<CleaningReviewBatchResult>>(
       `${API_BASE_URL}/reviews/batch-reject`,
       payload,
+    );
+    return response.data.data || null;
+  }
+
+  async getReviewOptimizationSuggestions(params?: {
+    jobRunId?: number;
+    agentId?: number;
+    limit?: number;
+  }): Promise<CleaningReviewOptimizationView | null> {
+    const response = await axios.get<ApiResponse<CleaningReviewOptimizationView>>(
+      `${API_BASE_URL}/reviews/optimization-suggestions`,
+      { params },
     );
     return response.data.data || null;
   }

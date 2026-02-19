@@ -155,7 +155,7 @@ public class CleaningBatchProcessor {
 		int ruleCount = snapshot != null && snapshot.getRules() != null ? snapshot.getRules().size() : 0;
 		Long snapshotPolicyId = snapshot != null ? snapshot.getPolicyId() : null;
 		String snapshotPolicyName = snapshot != null ? snapshot.getPolicyName() : null;
-		String pkColumn = preflight.pkColumn();
+		List<String> pkColumns = preflight.pkColumns();
 		List<String> targetColumns = preflight.targetColumns();
 		Map<String, String> jsonPathMappings = preflight.jsonPathMappings();
 		Map<String, String> updateMapping = preflight.updateMapping();
@@ -175,7 +175,7 @@ public class CleaningBatchProcessor {
 		BigDecimal estimatedCost = estimateBatchCost(job, targetColumns);
 		jobRunMapper.updateBudget(run.getId(), estimatedCost, actualCost, CleaningBudgetStatus.NORMAL.name(), null,
 				LocalDateTime.now());
-		String lastPk = resolveLastPk(run.getCheckpointJson());
+		Map<String, String> lastPkCursor = resolveLastPkCursor(run.getCheckpointJson(), pkColumns);
 
 		Datasource datasource = datasourceService.getDatasourceById(job.getDatasourceId());
 		DBConnectionPool pool = connectionPoolFactory.getPoolByDbType(datasource.getType());
@@ -193,16 +193,17 @@ public class CleaningBatchProcessor {
 				if (!CleaningJobRunStatus.RUNNING.name().equals(latestRun.getStatus())) {
 					return;
 				}
-				List<Map<String, String>> rows = fetchRows(connection, dialect, job, pkColumn, selectColumns, lastPk);
+				List<Map<String, String>> rows = fetchRows(connection, dialect, job, pkColumns, selectColumns,
+						lastPkCursor);
 				if (rows.isEmpty()) {
 					jobRunMapper.updateStatus(run.getId(), CleaningJobRunStatus.SUCCEEDED.name(), LocalDateTime.now(),
 							LocalDateTime.now());
 					return;
 				}
 				log.info("Cleaning batch chunk runId={} fetchedRows={} lastPk={} batchSize={}", run.getId(),
-						rows.size(), lastPk, resolveBatchSize(job));
+						rows.size(), lastPkCursor, resolveBatchSize(job));
 				Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> precomputedL3ByPkAndColumn = precomputeChunkL3(
-						run.getId(), job, snapshot, rows, pkColumn, targetColumns, jsonPathMappings);
+						run.getId(), job, snapshot, rows, pkColumns, targetColumns, jsonPathMappings);
 				for (Map<String, String> row : rows) {
 					CleaningJobRun latestBeforeRow = jobRunMapper.selectById(run.getId());
 					if (latestBeforeRow == null) {
@@ -210,18 +211,19 @@ public class CleaningBatchProcessor {
 					}
 					if (!CleaningJobRunStatus.RUNNING.name().equals(latestBeforeRow.getStatus())) {
 						log.info("Cleaning batch stop runId={} reason=STATUS_CHANGED status={} lastPk={}", run.getId(),
-								latestBeforeRow.getStatus(), lastPk);
+								latestBeforeRow.getStatus(), lastPkCursor);
 						return;
 					}
-					String pkValue = row.get(pkColumn);
-					if (pkValue == null) {
+					Map<String, String> pkValues = resolvePkValues(row, pkColumns);
+					if (pkValues.size() != pkColumns.size()) {
 						totalFailed++;
 						continue;
 					}
-					String pkJson = toJsonSafe(Map.of(pkColumn, pkValue));
+					String pkJson = toJsonSafe(pkValues);
+					String pkValueKey = buildPkValueKey(pkValues);
 					RowProcessResult rowResult = processRow(run.getId(), job, snapshot, allowlists, sanitizeRequested,
-							pkJson, pkColumn, pkValue, row, targetColumns, updateMapping, softDeleteMapping, columnMeta,
-							jsonPathMappings, precomputedL3ByPkAndColumn.get(pkValue), connection);
+							pkJson, pkValues, row, targetColumns, updateMapping, softDeleteMapping, columnMeta,
+							jsonPathMappings, precomputedL3ByPkAndColumn.get(pkValueKey), connection);
 					actualCost = actualCost.add(rowResult.costAmount());
 					totalScanned++;
 					if (rowResult.flagged()) {
@@ -235,14 +237,14 @@ public class CleaningBatchProcessor {
 					}
 					log.info(
 							"Cleaning batch row runId={} pk={} flagged={} written={} failed={} scanned={} flaggedTotal={} writtenTotal={} failedTotal={}",
-							run.getId(), pkValue, rowResult.flagged(), rowResult.written(), rowResult.failed(),
+							run.getId(), pkJson, rowResult.flagged(), rowResult.written(), rowResult.failed(),
 							totalScanned, totalFlagged, totalWritten, totalFailed);
-					lastPk = pkValue;
+					lastPkCursor = pkValues;
 					CleaningBudgetStatus budgetStatus = budgetService.evaluate(job, actualCost);
 					if (budgetStatus == CleaningBudgetStatus.HARD_EXCEEDED) {
 						LocalDateTime pauseTime = LocalDateTime.now();
 						String message = "预算达到硬阈值，自动暂停";
-						jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPk), totalScanned,
+						jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPkCursor), totalScanned,
 								totalFlagged, totalWritten, totalFailed, actualCost, budgetStatus.name(), message,
 								pauseTime,
 								pauseTime.plusSeconds(dataSentryProperties.getCleaning().getBatch().getLeaseSeconds()));
@@ -259,7 +261,7 @@ public class CleaningBatchProcessor {
 							.plusSeconds(dataSentryProperties.getCleaning().getBatch().getLeaseSeconds());
 						CleaningBudgetStatus status = budgetService.evaluate(job, actualCost);
 						String budgetMessage = status == CleaningBudgetStatus.SOFT_EXCEEDED ? "预算达到软阈值" : null;
-						jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPk), totalScanned,
+						jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPkCursor), totalScanned,
 								totalFlagged, totalWritten, totalFailed, actualCost, status.name(), budgetMessage,
 								progressTime, leaseUntil);
 						jobRunMapper.heartbeat(run.getId(), leaseOwner, leaseUntil, progressTime);
@@ -271,8 +273,9 @@ public class CleaningBatchProcessor {
 					.plusSeconds(dataSentryProperties.getCleaning().getBatch().getLeaseSeconds());
 				CleaningBudgetStatus status = budgetService.evaluate(job, actualCost);
 				String budgetMessage = status == CleaningBudgetStatus.SOFT_EXCEEDED ? "预算达到软阈值" : null;
-				jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPk), totalScanned, totalFlagged,
-						totalWritten, totalFailed, actualCost, status.name(), budgetMessage, heartbeatTime, leaseUntil);
+				jobRunMapper.updateProgressWithBudget(run.getId(), buildCheckpoint(lastPkCursor), totalScanned,
+						totalFlagged, totalWritten, totalFailed, actualCost, status.name(), budgetMessage,
+						heartbeatTime, leaseUntil);
 				jobRunMapper.heartbeat(run.getId(), leaseOwner, leaseUntil, heartbeatTime);
 				log.info(
 						"Cleaning batch progress runId={} scanned={} flagged={} written={} failed={} actualCost={} budgetStatus={}",
@@ -287,8 +290,8 @@ public class CleaningBatchProcessor {
 	}
 
 	private RowProcessResult processRow(Long runId, CleaningJob job, CleaningPolicySnapshot snapshot,
-			List<CleaningAllowlist> allowlists, boolean sanitizeRequested, String pkJson, String pkColumn,
-			String pkValue, Map<String, String> row, List<String> targetColumns, Map<String, String> updateMapping,
+			List<CleaningAllowlist> allowlists, boolean sanitizeRequested, String pkJson, Map<String, String> pkValues,
+			Map<String, String> row, List<String> targetColumns, Map<String, String> updateMapping,
 			Map<String, Object> softDeleteMapping, Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta,
 			Map<String, String> jsonPathMappings,
 			Map<String, Map<Long, LlmDetector.LlmDetectResult>> precomputedL3ByColumnAndRule, Connection connection) {
@@ -308,7 +311,7 @@ public class CleaningBatchProcessor {
 			for (String column : targetColumns) {
 				String value = row.get(column);
 				if (value == null || value.isBlank()) {
-					log.info("Cleaning batch column skip runId={} pk={} column={} reason=EMPTY_VALUE", runId, pkValue,
+					log.info("Cleaning batch column skip runId={} pk={} column={} reason=EMPTY_VALUE", runId, pkJson,
 							column);
 					continue;
 				}
@@ -316,7 +319,7 @@ public class CleaningBatchProcessor {
 				if (sourceText == null || sourceText.isBlank()) {
 					log.info(
 							"Cleaning batch column skip runId={} pk={} column={} reason=EMPTY_SOURCE_TEXT rawLength={} jsonPath={}",
-							runId, pkValue, column, value.length(), jsonPathMappings.get(column));
+							runId, pkJson, column, value.length(), jsonPathMappings.get(column));
 					continue;
 				}
 				long estimatedTokens = tokenEstimator.estimateTokens(sourceText);
@@ -365,20 +368,23 @@ public class CleaningBatchProcessor {
 				boolean softDeleteCandidate = writebackEnabled && writebackMode == CleaningWritebackMode.SOFT_DELETE
 						&& result.getVerdict() != null && (result.getVerdict().name().equals("BLOCK")
 								|| result.getVerdict().name().equals("REDACTED"));
+				boolean hardDeleteCandidate = writebackEnabled && writebackMode == CleaningWritebackMode.HARD_DELETE
+						&& result.getVerdict() != null && (result.getVerdict().name().equals("BLOCK")
+								|| result.getVerdict().name().equals("REDACTED"));
 				String verdict = result.getVerdict() != null ? result.getVerdict().name() : null;
 				boolean reviewRequired = isReviewRequired(reviewPolicy, reviewBlockOnRisk, verdict);
 				boolean blockReviewCandidate = reviewRequired && "BLOCK".equals(verdict);
 				boolean reviewOnlyCandidate = reviewRequired && verdict != null && !"ALLOW".equals(verdict)
-						&& !updateCandidate && !softDeleteCandidate && !blockReviewCandidate;
-				if (reviewRequired
-						&& (updateCandidate || softDeleteCandidate || blockReviewCandidate || reviewOnlyCandidate)) {
+						&& !updateCandidate && !softDeleteCandidate && !hardDeleteCandidate && !blockReviewCandidate;
+				if (reviewRequired && (updateCandidate || softDeleteCandidate || hardDeleteCandidate
+						|| blockReviewCandidate || reviewOnlyCandidate)) {
 					reviewPendingColumns.add(column);
-					if (softDeleteCandidate) {
+					if (softDeleteCandidate || hardDeleteCandidate) {
 						softDeleteReviewRequired = true;
 					}
 					CleaningReviewTask task = buildReviewTask(runId, job, pkJson, column, result, updateCandidate,
-							softDeleteCandidate, blockReviewCandidate, reviewOnlyCandidate, updateMapping,
-							softDeleteMapping, row);
+							softDeleteCandidate, hardDeleteCandidate, blockReviewCandidate, reviewOnlyCandidate,
+							updateMapping, softDeleteMapping, row);
 					if (task != null) {
 						reviewTasks.add(task);
 					}
@@ -390,12 +396,15 @@ public class CleaningBatchProcessor {
 				if (softDeleteCandidate) {
 					softDeleteTriggers.add(column);
 				}
+				if (hardDeleteCandidate) {
+					softDeleteTriggers.add(column);
+				}
 				log.info(
-						"Cleaning batch column result runId={} pk={} column={} verdict={} findings={} categories={} updateCandidate={} softDeleteCandidate={} reviewRequired={} sourceLength={} jsonPath={}",
-						runId, pkValue, column, result.getVerdict(),
+						"Cleaning batch column result runId={} pk={} column={} verdict={} findings={} categories={} updateCandidate={} softDeleteCandidate={} hardDeleteCandidate={} reviewRequired={} sourceLength={} jsonPath={}",
+						runId, pkJson, column, result.getVerdict(),
 						result.getFindings() != null ? result.getFindings().size() : 0,
-						resolveCategories(result.getFindings()), updateCandidate, softDeleteCandidate, reviewRequired,
-						sourceText.length(), jsonPathMappings.get(column));
+						resolveCategories(result.getFindings()), updateCandidate, softDeleteCandidate,
+						hardDeleteCandidate, reviewRequired, sourceText.length(), jsonPathMappings.get(column));
 			}
 
 			boolean written = false;
@@ -417,22 +426,26 @@ public class CleaningBatchProcessor {
 							}
 						}
 						if (!updateValues.isEmpty()) {
-							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, updateValues, columnMeta,
-									connection);
+							backupAndWrite(runId, job, pkJson, pkValues, row, updateValues, columnMeta, connection);
 							written = true;
 						}
 					}
 					else if (writebackMode == CleaningWritebackMode.SOFT_DELETE && !softDeleteTriggers.isEmpty()
 							&& !softDeleteReviewRequired) {
 						if (!softDeleteMapping.isEmpty()) {
-							backupAndWrite(runId, job, pkJson, pkColumn, pkValue, row, softDeleteMapping, columnMeta,
+							backupAndWrite(runId, job, pkJson, pkValues, row, softDeleteMapping, columnMeta,
 									connection);
 							written = true;
 						}
 					}
+					else if (writebackMode == CleaningWritebackMode.HARD_DELETE && !softDeleteTriggers.isEmpty()
+							&& !softDeleteReviewRequired) {
+						backupAndHardDelete(runId, job, pkJson, pkValues, row, connection);
+						written = true;
+					}
 				}
 				catch (Exception e) {
-					log.warn("Failed to writeback for job {} pk {}", job.getId(), pkValue, e);
+					log.warn("Failed to writeback for job {} pk {}", job.getId(), pkJson, e);
 					failed = true;
 				}
 			}
@@ -453,6 +466,10 @@ public class CleaningBatchProcessor {
 				if (writebackMode == CleaningWritebackMode.SOFT_DELETE && softDeleteTriggers.contains(column)
 						&& written) {
 					actionTaken = "SOFT_DELETE";
+				}
+				if (writebackMode == CleaningWritebackMode.HARD_DELETE && softDeleteTriggers.contains(column)
+						&& written) {
+					actionTaken = "HARD_DELETE";
 				}
 				CleaningRecord record = CleaningRecord.builder()
 					.agentId(job.getAgentId())
@@ -479,15 +496,15 @@ public class CleaningBatchProcessor {
 			return new RowProcessResult(flagged, written, failed, rowCost);
 		}
 		catch (Exception e) {
-			log.warn("Failed to process row for job {} pk {}", job.getId(), pkValue, e);
+			log.warn("Failed to process row for job {} pk {}", job.getId(), pkJson, e);
 			dlqService.push(job.getId(), runId, job.getDatasourceId(), job.getTableName(), pkJson,
-					Map.of("pkColumn", pkColumn, "pkValue", pkValue, "targetColumns", targetColumns), e);
+					Map.of("pkValues", pkValues, "targetColumns", targetColumns), e);
 			return new RowProcessResult(false, false, true, BigDecimal.ZERO);
 		}
 	}
 
 	private Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> precomputeChunkL3(Long runId,
-			CleaningJob job, CleaningPolicySnapshot snapshot, List<Map<String, String>> rows, String pkColumn,
+			CleaningJob job, CleaningPolicySnapshot snapshot, List<Map<String, String>> rows, List<String> pkColumns,
 			List<String> targetColumns, Map<String, String> jsonPathMappings) {
 		if (!isBatchL3Enabled(snapshot, rows, targetColumns)) {
 			return Map.of();
@@ -498,7 +515,7 @@ public class CleaningBatchProcessor {
 		}
 		int chunkBatchSize = resolveL3BatchSize();
 		Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> result = new ConcurrentHashMap<>();
-		List<L3BatchGroup> groups = buildL3BatchGroups(rows, pkColumn, targetColumns, jsonPathMappings, llmRules,
+		List<L3BatchGroup> groups = buildL3BatchGroups(rows, pkColumns, targetColumns, jsonPathMappings, llmRules,
 				chunkBatchSize);
 		if (groups.isEmpty()) {
 			return Map.of();
@@ -525,7 +542,7 @@ public class CleaningBatchProcessor {
 									batchResult.errorCode() != null ? batchResult.errorCode() : "L3_BATCH_FAILED", null,
 									mode);
 						}
-						result.computeIfAbsent(itemRef.pkValue(), key -> new ConcurrentHashMap<>())
+						result.computeIfAbsent(itemRef.pkValueKey(), key -> new ConcurrentHashMap<>())
 							.computeIfAbsent(group.column(), key -> new ConcurrentHashMap<>())
 							.put(group.ruleId(), itemResult);
 					}
@@ -580,7 +597,7 @@ public class CleaningBatchProcessor {
 		return Math.max(configured, 1);
 	}
 
-	private List<L3BatchGroup> buildL3BatchGroups(List<Map<String, String>> rows, String pkColumn,
+	private List<L3BatchGroup> buildL3BatchGroups(List<Map<String, String>> rows, List<String> pkColumns,
 			List<String> targetColumns, Map<String, String> jsonPathMappings, List<CleaningRule> llmRules,
 			int batchSize) {
 		List<L3BatchGroup> groups = new ArrayList<>();
@@ -589,10 +606,11 @@ public class CleaningBatchProcessor {
 				String prompt = resolveLlmRulePrompt(rule);
 				List<L3ItemRef> refs = new ArrayList<>();
 				for (Map<String, String> row : rows) {
-					String pkValue = resolvePkValue(row, pkColumn);
-					if (pkValue == null) {
+					Map<String, String> pkValues = resolvePkValues(row, pkColumns);
+					if (pkValues.size() != pkColumns.size()) {
 						continue;
 					}
+					String pkValueKey = buildPkValueKey(pkValues);
 					String rawValue = row.get(column);
 					if (rawValue == null || rawValue.isBlank()) {
 						continue;
@@ -601,8 +619,8 @@ public class CleaningBatchProcessor {
 					if (sourceText == null || sourceText.isBlank()) {
 						continue;
 					}
-					String itemId = buildBatchItemId(pkValue, column, rule.getId());
-					refs.add(new L3ItemRef(itemId, pkValue, sourceText));
+					String itemId = buildBatchItemId(pkValueKey, column, rule.getId());
+					refs.add(new L3ItemRef(itemId, pkValueKey, sourceText));
 				}
 				if (refs.isEmpty()) {
 					continue;
@@ -618,13 +636,6 @@ public class CleaningBatchProcessor {
 			}
 		}
 		return groups;
-	}
-
-	private String resolvePkValue(Map<String, String> row, String pkColumn) {
-		if (row == null || row.isEmpty()) {
-			return null;
-		}
-		return row.get(pkColumn);
 	}
 
 	private String buildBatchItemId(String pkValue, String column, Long ruleId) {
@@ -692,7 +703,7 @@ public class CleaningBatchProcessor {
 			.divide(BigDecimal.valueOf(1000L), 4, RoundingMode.HALF_UP);
 	}
 
-	private void backupAndWrite(Long runId, CleaningJob job, String pkJson, String pkColumn, String pkValue,
+	private void backupAndWrite(Long runId, CleaningJob job, String pkJson, Map<String, String> pkValues,
 			Map<String, String> row, Map<String, Object> updateValues,
 			Map<String, CleaningWritebackValidator.ColumnMeta> columnMeta, Connection connection) throws Exception {
 		String validationError = CleaningWritebackValidator.validateValues(columnMeta, updateValues);
@@ -725,25 +736,65 @@ public class CleaningBatchProcessor {
 			.createdTime(LocalDateTime.now())
 			.build();
 		backupRecordMapper.insert(record);
-		executeUpdate(connection, job.getTableName(), updateValues, pkColumn, pkValue);
+		executeUpdate(connection, job.getTableName(), updateValues, pkValues);
+	}
+
+	private void backupAndHardDelete(Long runId, CleaningJob job, String pkJson, Map<String, String> pkValues,
+			Map<String, String> row, Connection connection) throws Exception {
+		String beforeRowJson = toJsonSafe(row);
+		String ciphertext = null;
+		String plaintext = null;
+		if (dataSentryProperties.getCleaning().getBackup().isEncrypt()) {
+			ciphertext = encryptionService.encrypt(beforeRowJson);
+		}
+		else {
+			plaintext = beforeRowJson;
+		}
+		CleaningBackupRecord record = CleaningBackupRecord.builder()
+			.jobRunId(runId)
+			.datasourceId(job.getDatasourceId())
+			.tableName(job.getTableName())
+			.pkJson(pkJson)
+			.pkHash(hashPk(pkJson))
+			.encryptionProvider(encryptionService.getProviderName())
+			.keyVersion(encryptionService.getKeyVersion())
+			.beforeRowCiphertext(ciphertext)
+			.beforeRowJson(plaintext)
+			.createdTime(LocalDateTime.now())
+			.build();
+		backupRecordMapper.insert(record);
+		executeDelete(connection, job.getTableName(), pkValues);
 	}
 
 	private void executeUpdate(Connection connection, String tableName, Map<String, Object> updateValues,
-			String pkColumn, String pkValue) throws Exception {
+			Map<String, String> pkValues) throws Exception {
 		String setClause = updateValues.keySet().stream().map(col -> col + " = ?").collect(Collectors.joining(", "));
-		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + pkColumn + " = ?";
+		String sql = "UPDATE " + tableName + " SET " + setClause + " WHERE " + buildPkWhereClause(pkValues.keySet());
 		try (PreparedStatement statement = connection.prepareStatement(sql)) {
 			int index = 1;
 			for (Object value : updateValues.values()) {
 				statement.setObject(index++, value);
 			}
-			statement.setObject(index, pkValue);
+			for (String pkColumn : pkValues.keySet()) {
+				statement.setObject(index++, pkValues.get(pkColumn));
+			}
+			statement.executeUpdate();
+		}
+	}
+
+	private void executeDelete(Connection connection, String tableName, Map<String, String> pkValues) throws Exception {
+		String sql = "DELETE FROM " + tableName + " WHERE " + buildPkWhereClause(pkValues.keySet());
+		try (PreparedStatement statement = connection.prepareStatement(sql)) {
+			int index = 1;
+			for (String pkColumn : pkValues.keySet()) {
+				statement.setObject(index++, pkValues.get(pkColumn));
+			}
 			statement.executeUpdate();
 		}
 	}
 
 	private List<Map<String, String>> fetchRows(Connection connection, DatabaseDialectEnum dialect, CleaningJob job,
-			String pkColumn, List<String> selectColumns, String lastPk) throws Exception {
+			List<String> pkColumns, List<String> selectColumns, Map<String, String> lastPkCursor) throws Exception {
 		StringBuilder sql = new StringBuilder();
 		sql.append("SELECT ").append(String.join(",", selectColumns)).append(" FROM ").append(job.getTableName());
 		boolean hasWhereClause = false;
@@ -751,17 +802,25 @@ public class CleaningBatchProcessor {
 			sql.append(" WHERE (").append(job.getWhereSql()).append(")");
 			hasWhereClause = true;
 		}
-		boolean hasPk = lastPk != null && !lastPk.isBlank();
-		if (hasPk) {
-			sql.append(hasWhereClause ? " AND " : " WHERE ").append(pkColumn).append(" > ?");
+		boolean hasPkCursor = hasValidPkCursor(lastPkCursor, pkColumns);
+		if (hasPkCursor) {
+			sql.append(hasWhereClause ? " AND (" : " WHERE (");
+			sql.append(buildPkCursorWhereClause(pkColumns));
+			sql.append(")");
 		}
-		sql.append(" ORDER BY ").append(pkColumn).append(" ASC");
+		sql.append(" ORDER BY ")
+			.append(pkColumns.stream().map(column -> column + " ASC").collect(Collectors.joining(", ")));
 		String limitClause = resolveLimitClause(dialect);
 		sql.append(limitClause);
 		try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
 			int index = 1;
-			if (hasPk) {
-				statement.setObject(index++, lastPk);
+			if (hasPkCursor) {
+				for (int depth = 0; depth < pkColumns.size(); depth++) {
+					for (int prefix = 0; prefix < depth; prefix++) {
+						statement.setObject(index++, lastPkCursor.get(pkColumns.get(prefix)));
+					}
+					statement.setObject(index++, lastPkCursor.get(pkColumns.get(depth)));
+				}
 			}
 			statement.setInt(index, resolveBatchSize(job));
 			List<Map<String, String>> rows = new ArrayList<>();
@@ -779,8 +838,12 @@ public class CleaningBatchProcessor {
 	}
 
 	private Preflight preflight(CleaningJob job) {
-		if (!"METADB".equalsIgnoreCase(dataSentryProperties.getCleaning().getBackup().getStorage())) {
-			return Preflight.fail("Only METADB backup is supported");
+		String backupStorage = dataSentryProperties.getCleaning().getBackup().getStorage();
+		if (backupStorage == null || backupStorage.isBlank()) {
+			backupStorage = "METADB";
+		}
+		if (!"METADB".equalsIgnoreCase(backupStorage) && !"BUSINESS_DB".equalsIgnoreCase(backupStorage)) {
+			return Preflight.fail("Unsupported backup storage: " + backupStorage);
 		}
 		CleaningWritebackMode writebackMode = parseWritebackMode(job.getWritebackMode());
 		boolean writebackEnabled = CleaningJobMode.WRITEBACK.name().equalsIgnoreCase(job.getMode());
@@ -789,10 +852,9 @@ public class CleaningBatchProcessor {
 			return Preflight.fail(encryptionService.missingKeyHint());
 		}
 		List<String> pkColumns = parseJsonArray(job.getPkColumnsJson());
-		if (pkColumns.size() != 1) {
-			return Preflight.fail("Only single primary key is supported");
+		if (pkColumns.isEmpty()) {
+			return Preflight.fail("Primary key columns are required");
 		}
-		String pkColumn = pkColumns.get(0);
 		List<String> targetColumns = parseJsonArray(job.getTargetColumnsJson());
 		if (targetColumns.isEmpty()) {
 			return Preflight.fail("Target columns are required");
@@ -808,7 +870,7 @@ public class CleaningBatchProcessor {
 			return Preflight.fail("Soft delete mapping is required");
 		}
 		Set<String> selectColumns = new LinkedHashSet<>();
-		selectColumns.add(pkColumn);
+		selectColumns.addAll(pkColumns);
 		selectColumns.addAll(targetColumns);
 		if (writebackEnabled && writebackMode == CleaningWritebackMode.UPDATE) {
 			selectColumns.addAll(updateMapping.values());
@@ -816,16 +878,22 @@ public class CleaningBatchProcessor {
 		if (writebackEnabled && writebackMode == CleaningWritebackMode.SOFT_DELETE) {
 			selectColumns.addAll(softDeleteMapping.keySet());
 		}
+		if (writebackEnabled && writebackMode == CleaningWritebackMode.HARD_DELETE) {
+			selectColumns.addAll(pkColumns);
+		}
 		for (String column : selectColumns) {
 			if (!isValidIdentifier(column)) {
 				return Preflight.fail("Invalid column: " + column);
 			}
 		}
-		if (!isValidIdentifier(job.getTableName()) || !isValidIdentifier(pkColumn)) {
+		if (!isValidIdentifier(job.getTableName()) || pkColumns.stream().anyMatch(pk -> !isValidIdentifier(pk))) {
 			return Preflight.fail("Invalid table or pk column");
 		}
 		try {
 			List<String> existingColumns = datasourceService.getTableColumns(job.getDatasourceId(), job.getTableName());
+			if (writebackEnabled && writebackMode == CleaningWritebackMode.HARD_DELETE) {
+				selectColumns.addAll(existingColumns);
+			}
 			for (String column : selectColumns) {
 				if (!existingColumns.contains(column)) {
 					return Preflight.fail("Column not found: " + column);
@@ -836,8 +904,9 @@ public class CleaningBatchProcessor {
 			return Preflight.fail("Failed to validate columns");
 		}
 		boolean sanitizeRequested = writebackMode == CleaningWritebackMode.UPDATE
-				|| writebackMode == CleaningWritebackMode.SOFT_DELETE;
-		return Preflight.ok(pkColumn, targetColumns, updateMapping, softDeleteMapping, jsonPathMappings,
+				|| writebackMode == CleaningWritebackMode.SOFT_DELETE
+				|| writebackMode == CleaningWritebackMode.HARD_DELETE;
+		return Preflight.ok(pkColumns, targetColumns, updateMapping, softDeleteMapping, jsonPathMappings,
 				new ArrayList<>(selectColumns), sanitizeRequested);
 	}
 
@@ -957,9 +1026,9 @@ public class CleaningBatchProcessor {
 	}
 
 	private CleaningReviewTask buildReviewTask(Long runId, CleaningJob job, String pkJson, String column,
-			CleaningContext context, boolean updateCandidate, boolean softDeleteCandidate, boolean blockReviewCandidate,
-			boolean reviewOnlyCandidate, Map<String, String> updateMapping, Map<String, Object> softDeleteMapping,
-			Map<String, String> row) {
+			CleaningContext context, boolean updateCandidate, boolean softDeleteCandidate, boolean hardDeleteCandidate,
+			boolean blockReviewCandidate, boolean reviewOnlyCandidate, Map<String, String> updateMapping,
+			Map<String, Object> softDeleteMapping, Map<String, String> row) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		Map<String, Object> beforeRow = new LinkedHashMap<>();
 		String actionSuggested = null;
@@ -979,6 +1048,10 @@ public class CleaningBatchProcessor {
 			}
 			actionSuggested = "SOFT_DELETE";
 		}
+		else if (hardDeleteCandidate) {
+			beforeRow.putAll(row);
+			actionSuggested = "HARD_DELETE";
+		}
 		else if (blockReviewCandidate) {
 			actionSuggested = "BLOCK_ONLY";
 			beforeRow.put(column, row.get(column));
@@ -988,7 +1061,7 @@ public class CleaningBatchProcessor {
 			beforeRow.put(column, row.get(column));
 		}
 		if (payload.isEmpty()) {
-			if (!blockReviewCandidate && !reviewOnlyCandidate) {
+			if (!blockReviewCandidate && !reviewOnlyCandidate && !hardDeleteCandidate) {
 				return null;
 			}
 		}
@@ -1012,6 +1085,14 @@ public class CleaningBatchProcessor {
 			.createdTime(now)
 			.updatedTime(now)
 			.build();
+	}
+
+	private CleaningReviewTask buildReviewTask(Long runId, CleaningJob job, String pkJson, String column,
+			CleaningContext context, boolean updateCandidate, boolean softDeleteCandidate, boolean blockReviewCandidate,
+			boolean reviewOnlyCandidate, Map<String, String> updateMapping, Map<String, Object> softDeleteMapping,
+			Map<String, String> row) {
+		return buildReviewTask(runId, job, pkJson, column, context, updateCandidate, softDeleteCandidate, false,
+				blockReviewCandidate, reviewOnlyCandidate, updateMapping, softDeleteMapping, row);
 	}
 
 	private CleaningContext buildShadowContext(CleaningContext mainResult, CleaningPolicySnapshot snapshot) {
@@ -1043,25 +1124,102 @@ public class CleaningBatchProcessor {
 		return null;
 	}
 
-	private String resolveLastPk(String checkpointJson) {
+	private Map<String, String> resolveLastPkCursor(String checkpointJson, List<String> pkColumns) {
 		if (checkpointJson == null || checkpointJson.isBlank()) {
 			return null;
 		}
 		try {
 			Map<?, ?> map = JsonUtil.getObjectMapper().readValue(checkpointJson, Map.class);
 			Object value = map.get("lastPk");
-			return value != null ? String.valueOf(value) : null;
+			if (value instanceof Map<?, ?> lastPkMap) {
+				Map<String, String> cursor = new LinkedHashMap<>();
+				for (String pkColumn : pkColumns) {
+					Object pkValue = lastPkMap.get(pkColumn);
+					if (pkValue == null) {
+						return null;
+					}
+					cursor.put(pkColumn, String.valueOf(pkValue));
+				}
+				return cursor;
+			}
+			if (value != null && pkColumns.size() == 1) {
+				return new LinkedHashMap<>(Map.of(pkColumns.get(0), String.valueOf(value)));
+			}
 		}
-		catch (Exception e) {
-			return null;
+		catch (Exception ignored) {
 		}
+		return null;
 	}
 
-	private String buildCheckpoint(String lastPk) {
-		if (lastPk == null) {
+	private String buildCheckpoint(Map<String, String> lastPkCursor) {
+		if (lastPkCursor == null || lastPkCursor.isEmpty()) {
 			return null;
 		}
-		return toJsonSafe(Map.of("lastPk", lastPk));
+		return toJsonSafe(Map.of("lastPk", lastPkCursor));
+	}
+
+	private Map<String, String> resolvePkValues(Map<String, String> row, List<String> pkColumns) {
+		if (row == null || row.isEmpty() || pkColumns == null || pkColumns.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, String> pkValues = new LinkedHashMap<>();
+		for (String pkColumn : pkColumns) {
+			String value = row.get(pkColumn);
+			if (value == null || value.isBlank()) {
+				return Map.of();
+			}
+			pkValues.put(pkColumn, value);
+		}
+		return pkValues;
+	}
+
+	private boolean hasValidPkCursor(Map<String, String> lastPkCursor, List<String> pkColumns) {
+		if (lastPkCursor == null || lastPkCursor.isEmpty()) {
+			return false;
+		}
+		for (String pkColumn : pkColumns) {
+			if (!lastPkCursor.containsKey(pkColumn) || lastPkCursor.get(pkColumn) == null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private String buildPkCursorWhereClause(List<String> pkColumns) {
+		List<String> conditions = new ArrayList<>();
+		for (int depth = 0; depth < pkColumns.size(); depth++) {
+			StringBuilder condition = new StringBuilder();
+			for (int prefix = 0; prefix < depth; prefix++) {
+				if (prefix > 0) {
+					condition.append(" AND ");
+				}
+				condition.append(pkColumns.get(prefix)).append(" = ?");
+			}
+			if (depth > 0) {
+				condition.append(" AND ");
+			}
+			condition.append(pkColumns.get(depth)).append(" > ?");
+			conditions.add("(" + condition + ")");
+		}
+		return String.join(" OR ", conditions);
+	}
+
+	private String buildPkWhereClause(Iterable<String> pkColumns) {
+		List<String> conditions = new ArrayList<>();
+		for (String pkColumn : pkColumns) {
+			conditions.add(pkColumn + " = ?");
+		}
+		return String.join(" AND ", conditions);
+	}
+
+	private String buildPkValueKey(Map<String, String> pkValues) {
+		if (pkValues == null || pkValues.isEmpty()) {
+			return "";
+		}
+		return pkValues.entrySet()
+			.stream()
+			.map(entry -> entry.getKey() + "=" + entry.getValue())
+			.collect(Collectors.joining("|"));
 	}
 
 	private Map<String, String> parseUpdateMapping(String mappingJson, List<String> targetColumns) {
@@ -1185,18 +1343,18 @@ public class CleaningBatchProcessor {
 		jobRunMapper.updateStatus(runId, CleaningJobRunStatus.FAILED.name(), now, now);
 	}
 
-	private record Preflight(boolean ok, String message, String pkColumn, List<String> targetColumns,
+	private record Preflight(boolean ok, String message, List<String> pkColumns, List<String> targetColumns,
 			Map<String, String> updateMapping, Map<String, Object> softDeleteMapping,
 			Map<String, String> jsonPathMappings, List<String> selectColumns, boolean sanitizeRequested) {
 
 		static Preflight fail(String message) {
-			return new Preflight(false, message, null, List.of(), Map.of(), Map.of(), Map.of(), List.of(), false);
+			return new Preflight(false, message, List.of(), List.of(), Map.of(), Map.of(), Map.of(), List.of(), false);
 		}
 
-		static Preflight ok(String pkColumn, List<String> targetColumns, Map<String, String> updateMapping,
+		static Preflight ok(List<String> pkColumns, List<String> targetColumns, Map<String, String> updateMapping,
 				Map<String, Object> softDeleteMapping, Map<String, String> jsonPathMappings, List<String> selectColumns,
 				boolean sanitizeRequested) {
-			return new Preflight(true, null, pkColumn, targetColumns, updateMapping, softDeleteMapping,
+			return new Preflight(true, null, pkColumns, targetColumns, updateMapping, softDeleteMapping,
 					jsonPathMappings, selectColumns, sanitizeRequested);
 		}
 	}
@@ -1208,7 +1366,7 @@ public class CleaningBatchProcessor {
 			List<L3ItemRef> itemRefs) {
 	}
 
-	private record L3ItemRef(String itemId, String pkValue, String text) {
+	private record L3ItemRef(String itemId, String pkValueKey, String text) {
 	}
 
 }

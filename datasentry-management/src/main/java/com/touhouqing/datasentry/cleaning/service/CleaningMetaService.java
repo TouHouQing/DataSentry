@@ -91,7 +91,8 @@ public class CleaningMetaService {
 	private List<CleaningOptionItemView> writebackModes() {
 		return List.of(optionWithCaution("NONE", "不写回", "仅生成检测结果", null),
 				optionWithCaution("UPDATE", "更新写回", "将脱敏后的字段更新回原表", "建议先在试运行验证"),
-				optionWithCaution("SOFT_DELETE", "软删除", "将记录标记为已删除状态", "需确认业务有软删字段"));
+				optionWithCaution("SOFT_DELETE", "软删除", "将记录标记为已删除状态", "需确认业务有软删字段"),
+				optionWithCaution("HARD_DELETE", "硬删除", "直接删除命中记录", "高风险动作，需 delete:hard 权限"));
 	}
 
 	private List<CleaningOptionItemView> runStatuses() {
@@ -230,6 +231,7 @@ public class CleaningMetaService {
 		confirmations.put("REVIEW_THEN_WRITEBACK", "命中后会先进入人审，通过后写回。请确认审批流程已准备好。");
 		confirmations.put("DELETE", "该动作会删除或软删数据，风险极高。请确认已评估回滚方案。");
 		confirmations.put("WRITEBACK", "正式写回会修改业务数据，建议先用试运行观察结果。");
+		confirmations.put("HARD_DELETE", "硬删除会直接删除原始记录，仅在确认权限与回滚预案后执行。");
 		return confirmations;
 	}
 

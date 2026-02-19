@@ -138,7 +138,7 @@
             <el-table-column label="操作" width="430" fixed="right">
               <template #default="scope">
                 <el-button size="small" @click="loadBudget(scope.row)">预算</el-button>
-                <el-button size="small" type="primary" @click="createRollback(scope.row)">
+                <el-button size="small" type="primary" @click="openRollbackCreateDialog(scope.row)">
                   回滚
                 </el-button>
                 <el-button size="small" type="info" @click="exportEvidenceBundle(scope.row)">
@@ -373,6 +373,15 @@
                 </el-select>
               </el-form-item>
 
+              <el-alert
+                v-if="createForm.writebackMode === 'HARD_DELETE'"
+                type="error"
+                :closable="false"
+                show-icon
+                class="inline-alert"
+                title="当前为硬删除模式：会直接删除数据，需 delete:hard 权限，并强烈建议先试运行与备份验证。"
+              />
+
               <el-form-item label="人审策略">
                 <el-select v-model="createForm.reviewPolicy" style="width: 240px">
                   <el-option
@@ -507,6 +516,42 @@
               {{ formatBudgetMessage(budgetView.budgetStatus, budgetView.budgetMessage) }}
             </el-descriptions-item>
           </el-descriptions>
+        </el-dialog>
+
+        <el-dialog v-model="rollbackCreateDialogVisible" title="创建回滚任务" width="560px">
+          <el-form :model="rollbackCreateForm" label-width="120px">
+            <el-form-item label="回滚范围">
+              <el-radio-group v-model="rollbackCreateForm.scope">
+                <el-radio label="RUN">整次 Run</el-radio>
+                <el-radio label="RECORDS">指定备份记录</el-radio>
+                <el-radio label="TIME_WINDOW">时间窗</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="rollbackCreateForm.scope === 'RECORDS'" label="备份记录 ID">
+              <el-input
+                v-model="rollbackCreateForm.backupRecordIdsText"
+                type="textarea"
+                :autosize="{ minRows: 2, maxRows: 4 }"
+                placeholder="请输入备份记录 ID，多个用逗号分隔，例如：1001,1002,1003"
+              />
+            </el-form-item>
+            <el-form-item v-if="rollbackCreateForm.scope === 'TIME_WINDOW'" label="时间窗">
+              <el-date-picker
+                v-model="rollbackCreateForm.timeRange"
+                type="datetimerange"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="rollbackCreateDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="rollbackLoading" @click="submitCreateRollback">
+              创建回滚
+            </el-button>
+          </template>
         </el-dialog>
 
         <el-dialog v-model="rollbackDialogVisible" title="回滚任务" width="520px">
@@ -725,6 +770,13 @@
   const rollbackDialogVisible = ref(false);
   const rollbackRun = ref(null);
   const rollbackLoading = ref(false);
+  const rollbackCreateDialogVisible = ref(false);
+  const rollbackCreateForm = reactive({
+    runId: null,
+    scope: 'RUN',
+    backupRecordIdsText: '',
+    timeRange: [],
+  });
 
   const resetJsonPathMappings = () => {
     Object.keys(jsonPathMappings).forEach(key => {
@@ -737,6 +789,13 @@
     createStep.value = 0;
     editingJobId.value = null;
     resetJsonPathMappings();
+  };
+
+  const resetRollbackCreateForm = () => {
+    rollbackCreateForm.runId = null;
+    rollbackCreateForm.scope = 'RUN';
+    rollbackCreateForm.backupRecordIdsText = '';
+    rollbackCreateForm.timeRange = [];
   };
 
   const parseJsonObject = (text, fallback = {}) => {
@@ -1214,8 +1273,11 @@
     if (createForm.mode === 'WRITEBACK' || createForm.writebackMode !== 'NONE') {
       try {
         const riskMessage =
-          optionMeta.value.riskConfirmations?.WRITEBACK ||
-          '正式写回会修改业务数据，建议先试运行验证。确认继续创建？';
+          createForm.writebackMode === 'HARD_DELETE'
+            ? optionMeta.value.riskConfirmations?.HARD_DELETE ||
+              '硬删除会直接删除数据，确认已具备权限与回滚预案后再继续。'
+            : optionMeta.value.riskConfirmations?.WRITEBACK ||
+              '正式写回会修改业务数据，建议先试运行验证。确认继续创建？';
         await ElMessageBox.confirm(riskMessage, '写回风险确认', {
           type: 'warning',
           confirmButtonText: '继续创建',
@@ -1313,14 +1375,73 @@
     }
   };
 
-  const createRollback = async run => {
+  const openRollbackCreateDialog = run => {
+    if (!run?.id) {
+      return;
+    }
+    resetRollbackCreateForm();
+    rollbackCreateForm.runId = run.id;
+    rollbackCreateDialogVisible.value = true;
+  };
+
+  const parseBackupRecordIds = text => {
+    if (!text || !String(text).trim()) {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        String(text)
+          .split(',')
+          .map(item => Number(item.trim()))
+          .filter(item => Number.isInteger(item) && item > 0),
+      ),
+    );
+  };
+
+  const buildRollbackPayload = () => {
+    if (rollbackCreateForm.scope === 'RUN') {
+      return {};
+    }
+    if (rollbackCreateForm.scope === 'RECORDS') {
+      const backupRecordIds = parseBackupRecordIds(rollbackCreateForm.backupRecordIdsText);
+      if (backupRecordIds.length === 0) {
+        ElMessage.error('请输入至少一个有效的备份记录 ID');
+        return null;
+      }
+      return { backupRecordIds };
+    }
+    if (rollbackCreateForm.scope === 'TIME_WINDOW') {
+      if (
+        !Array.isArray(rollbackCreateForm.timeRange) ||
+        rollbackCreateForm.timeRange.length !== 2
+      ) {
+        ElMessage.error('请选择完整时间窗');
+        return null;
+      }
+      return {
+        startTime: rollbackCreateForm.timeRange[0],
+        endTime: rollbackCreateForm.timeRange[1],
+      };
+    }
+    return {};
+  };
+
+  const submitCreateRollback = async () => {
+    if (!rollbackCreateForm.runId) {
+      return;
+    }
+    const payload = buildRollbackPayload();
+    if (payload === null) {
+      return;
+    }
     rollbackLoading.value = true;
     try {
-      const result = await cleaningService.createRollback(run.id);
+      const result = await cleaningService.createRollback(rollbackCreateForm.runId, payload);
       if (!result) {
         ElMessage.error('创建回滚任务失败');
         return;
       }
+      rollbackCreateDialogVisible.value = false;
       rollbackRun.value = result;
       rollbackDialogVisible.value = true;
       ElMessage.success(`回滚任务已创建：#${result.id}`);

@@ -5,11 +5,13 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewBatchResult;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewDecisionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningReviewEscalateResult;
+import com.touhouqing.datasentry.cleaning.dto.CleaningReviewOptimizationView;
 import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewFeedbackRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.service.CleaningReviewService;
+import com.touhouqing.datasentry.cleaning.service.CleaningReviewOptimizationService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import com.touhouqing.datasentry.vo.PageResponse;
 import com.touhouqing.datasentry.vo.PageResult;
@@ -26,6 +28,8 @@ import java.util.List;
 public class CleaningReviewController {
 
 	private final CleaningReviewService reviewService;
+
+	private final CleaningReviewOptimizationService optimizationService;
 
 	private final CleaningPermissionGuard permissionGuard;
 
@@ -48,6 +52,14 @@ public class CleaningReviewController {
 			.ok(ApiResponse.success("success", reviewService.listFeedbackSamples(jobRunId, agentId, limit)));
 	}
 
+	@GetMapping("/reviews/optimization-suggestions")
+	public ResponseEntity<ApiResponse<CleaningReviewOptimizationView>> optimizationSuggestions(
+			@RequestParam(required = false) Long jobRunId, @RequestParam(required = false) Long agentId,
+			@RequestParam(required = false) Integer limit) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", optimizationService.summarize(jobRunId, agentId, limit)));
+	}
+
 	@GetMapping("/reviews/{id}")
 	public ResponseEntity<ApiResponse<CleaningReviewTask>> getReview(@PathVariable Long id) {
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.getReview(id)));
@@ -63,6 +75,9 @@ public class CleaningReviewController {
 	public ResponseEntity<ApiResponse<CleaningReviewTask>> approve(@PathVariable Long id,
 			@RequestBody @Valid CleaningReviewDecisionRequest request) {
 		permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
+		if (reviewService.requiresHardDeletePermission(id)) {
+			permissionGuard.require(CleaningPermissionCode.DELETE_HARD);
+		}
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.approve(id, request)));
 	}
 
@@ -76,6 +91,9 @@ public class CleaningReviewController {
 	public ResponseEntity<ApiResponse<CleaningReviewBatchResult>> batchApprove(
 			@RequestBody @Valid CleaningReviewBatchRequest request) {
 		permissionGuard.require(CleaningPermissionCode.WRITEBACK_EXECUTE);
+		if (reviewService.requiresHardDeletePermission(request)) {
+			permissionGuard.require(CleaningPermissionCode.DELETE_HARD);
+		}
 		return ResponseEntity.ok(ApiResponse.success("success", reviewService.batchApprove(request)));
 	}
 

@@ -2,6 +2,7 @@ package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveResult;
+import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackCreateRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackConflictRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
@@ -24,9 +25,10 @@ public class CleaningRollbackController {
 	private final CleaningPermissionGuard permissionGuard;
 
 	@PostMapping("/job-runs/{runId}/rollback")
-	public ResponseEntity<ApiResponse<CleaningRollbackRun>> createRollback(@PathVariable Long runId) {
+	public ResponseEntity<ApiResponse<CleaningRollbackRun>> createRollback(@PathVariable Long runId,
+			@RequestBody(required = false) CleaningRollbackCreateRequest request) {
 		permissionGuard.require(CleaningPermissionCode.ROLLBACK_EXECUTE);
-		return ResponseEntity.ok(ApiResponse.success("success", rollbackService.createRollbackRun(runId)));
+		return ResponseEntity.ok(ApiResponse.success("success", rollbackService.createRollbackRun(runId, request)));
 	}
 
 	@GetMapping("/rollbacks/{rollbackRunId}")

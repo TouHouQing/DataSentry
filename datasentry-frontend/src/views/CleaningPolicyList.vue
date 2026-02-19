@@ -52,7 +52,7 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="380" fixed="right">
+                <el-table-column label="操作" width="520" fixed="right">
                   <template #default="scope">
                     <el-button
                       size="small"
@@ -64,10 +64,22 @@
                     </el-button>
                     <el-button
                       size="small"
+                      type="warning"
+                      plain
+                      :loading="grayPublishLoadingMap[scope.row.id]"
+                      @click="publishPolicyGray(scope.row)"
+                    >
+                      灰度发布
+                    </el-button>
+                    <el-button
+                      size="small"
                       :loading="versionLoadingMap[scope.row.id]"
                       @click="openVersionDialog(scope.row)"
                     >
                       版本
+                    </el-button>
+                    <el-button size="small" @click="openExperimentDialog(scope.row)">
+                      实验
                     </el-button>
                     <el-button size="small" type="primary" @click="openPolicyDialog(scope.row)">
                       编辑
@@ -235,6 +247,50 @@
         <template #footer>
           <el-button @click="policyDialogVisible = false">取消</el-button>
           <el-button type="primary" @click="savePolicy">保存</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog
+        v-model="experimentDialogVisible"
+        :title="`实验记录${selectedVersionPolicy ? ` - ${selectedVersionPolicy.name}` : ''}`"
+        width="860px"
+        :close-on-click-modal="false"
+      >
+        <el-table
+          :data="policyExperiments"
+          style="width: 100%"
+          stripe
+          v-loading="loadingPolicyExperiments"
+        >
+          <el-table-column prop="action" label="动作" width="130" />
+          <el-table-column prop="publishMode" label="发布模式" width="120" />
+          <el-table-column label="灰度比例" width="120">
+            <template #default="scope">
+              {{
+                scope.row.grayRatio !== undefined && scope.row.grayRatio !== null
+                  ? `${(Number(scope.row.grayRatio) * 100).toFixed(2)}%`
+                  : '-'
+              }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="experimentName" label="实验名称" min-width="180" />
+          <el-table-column prop="operator" label="操作者" width="120" />
+          <el-table-column prop="note" label="备注" min-width="160" />
+          <el-table-column label="创建时间" min-width="180">
+            <template #default="scope">
+              {{ formatDateTime(scope.row.createdTime) }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <template #footer>
+          <el-button @click="experimentDialogVisible = false">关闭</el-button>
+          <el-button
+            type="primary"
+            :loading="loadingPolicyExperiments"
+            @click="loadPolicyExperiments(selectedVersionPolicy?.id)"
+          >
+            刷新
+          </el-button>
         </template>
       </el-dialog>
 
@@ -619,6 +675,7 @@
   const loadingRules = ref(false);
   const bindingAgents = ref([]);
   const publishLoadingMap = reactive({});
+  const grayPublishLoadingMap = reactive({});
   const versionLoadingMap = reactive({});
   const rollbackVersionLoadingMap = reactive({});
   const versionDialogVisible = ref(false);
@@ -626,6 +683,9 @@
   const policyVersions = ref([]);
   const loadingPolicyVersions = ref(false);
   const refreshVersionsLoading = ref(false);
+  const experimentDialogVisible = ref(false);
+  const policyExperiments = ref([]);
+  const loadingPolicyExperiments = ref(false);
 
   const uiMode = ref(readCleaningUiMode());
   const optionMeta = ref(mergeOptionsWithFallback(null));
@@ -1083,6 +1143,31 @@
     refreshVersionsLoading.value = false;
   };
 
+  const loadPolicyExperiments = async policyId => {
+    if (!policyId) {
+      policyExperiments.value = [];
+      return;
+    }
+    loadingPolicyExperiments.value = true;
+    try {
+      policyExperiments.value = await cleaningService.listPolicyExperiments(policyId, {
+        limit: 100,
+      });
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '加载实验记录失败');
+      policyExperiments.value = [];
+    } finally {
+      loadingPolicyExperiments.value = false;
+    }
+  };
+
+  const openExperimentDialog = async policy => {
+    selectedVersionPolicy.value = policy;
+    experimentDialogVisible.value = true;
+    await loadPolicyExperiments(policy?.id);
+  };
+
   const publishPolicyVersion = async policy => {
     if (!policy?.id) {
       return;
@@ -1113,6 +1198,50 @@
       ElMessage.error(message || '策略发布失败');
     } finally {
       publishLoadingMap[policy.id] = false;
+    }
+  };
+
+  const publishPolicyGray = async policy => {
+    if (!policy?.id) {
+      return;
+    }
+    try {
+      const ratioInput = await ElMessageBox.prompt('请输入灰度比例（0-1）', '灰度发布', {
+        confirmButtonText: '下一步',
+        cancelButtonText: '取消',
+        inputValue: '0.1',
+      });
+      const grayRatio = Number(ratioInput.value);
+      if (!Number.isFinite(grayRatio) || grayRatio <= 0 || grayRatio > 1) {
+        ElMessage.error('灰度比例必须在 (0, 1] 之间');
+        return;
+      }
+      const experimentInput = await ElMessageBox.prompt('请输入实验名称（可选）', '灰度发布', {
+        confirmButtonText: '发布',
+        cancelButtonText: '取消',
+        inputPlaceholder: `policy-${policy.id}-gray`,
+      });
+      grayPublishLoadingMap[policy.id] = true;
+      await cleaningService.publishPolicy(policy.id, {
+        publishMode: 'GRAY',
+        grayRatio,
+        experimentName: experimentInput.value || undefined,
+      });
+      await loadPolicies();
+      if (experimentDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
+        await loadPolicyExperiments(policy.id);
+      }
+      if (versionDialogVisible.value && selectedVersionPolicy.value?.id === policy.id) {
+        await loadPolicyVersions(policy.id, { asRefresh: true });
+      }
+      ElMessage.success('灰度发布成功');
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') {
+        const message = normalizeApiError(error);
+        ElMessage.error(message || '灰度发布失败');
+      }
+    } finally {
+      grayPublishLoadingMap[policy.id] = false;
     }
   };
 

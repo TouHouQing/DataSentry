@@ -30,6 +30,9 @@
             </el-select>
             <el-input v-model="filters.jobRunId" placeholder="Job Run ID" style="width: 200px" />
             <el-button type="primary" @click="handleQuery">查询</el-button>
+            <el-button :loading="loadingOptimization" @click="loadOptimizationSuggestions">
+              优化建议
+            </el-button>
           </div>
           <div class="bulk-row">
             <el-button
@@ -64,6 +67,45 @@
               全量拒绝
             </el-button>
           </div>
+        </el-card>
+
+        <el-card class="optimization-card" v-loading="loadingOptimization">
+          <template #header>
+            <div class="optimization-header">
+              <span>反馈优化建议</span>
+              <span class="optimization-meta">
+                样本数：{{ optimizationView?.totalSamples || 0 }}
+              </span>
+            </div>
+          </template>
+          <el-empty
+            v-if="!optimizationView || (optimizationView.disputedRules || []).length === 0"
+            description="暂无可用建议"
+          />
+          <template v-else>
+            <el-table :data="optimizationView.disputedRules" stripe size="small">
+              <el-table-column prop="category" label="类别" width="140" />
+              <el-table-column prop="actionSuggested" label="建议动作" width="140" />
+              <el-table-column prop="total" label="样本数" width="100" />
+              <el-table-column prop="rejected" label="拒绝" width="100" />
+              <el-table-column prop="conflict" label="冲突" width="100" />
+              <el-table-column label="争议率" width="120">
+                <template #default="scope">
+                  {{ `${(Number(scope.row.disputeRate || 0) * 100).toFixed(2)}%` }}
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="suggestion-list">
+              <el-tag
+                v-for="item in optimizationView.thresholdSuggestions || []"
+                :key="`${item.category}-${item.suggestion}`"
+                type="warning"
+                effect="light"
+              >
+                {{ item.category }}：{{ item.suggestion }}
+              </el-tag>
+            </div>
+          </template>
         </el-card>
 
         <el-card>
@@ -176,9 +218,11 @@
 
   const reviews = ref([]);
   const loading = ref(false);
+  const loadingOptimization = ref(false);
   const selectedRows = ref([]);
   const detailVisible = ref(false);
   const currentTask = ref(null);
+  const optimizationView = ref(null);
   const filters = ref({
     status: 'PENDING',
     jobRunId: '',
@@ -220,6 +264,7 @@
     NONE: '不处理',
     WRITEBACK: '写回',
     SOFT_DELETE: '软删除',
+    HARD_DELETE: '硬删除',
     BLOCK_ONLY: '仅阻断',
     REVIEW_ONLY: '仅人审',
   };
@@ -271,6 +316,7 @@
 
   const handleQuery = async () => {
     await loadReviews(true);
+    await loadOptimizationSuggestions();
   };
 
   const handlePageChange = async pageNum => {
@@ -352,6 +398,25 @@
       if (error !== 'cancel' && error !== 'close') {
         ElMessage.error('升级超时任务失败');
       }
+    }
+  };
+
+  const loadOptimizationSuggestions = async () => {
+    loadingOptimization.value = true;
+    try {
+      const params = {};
+      if (filters.value.jobRunId) {
+        const jobRunId = Number(filters.value.jobRunId);
+        if (!Number.isNaN(jobRunId)) {
+          params.jobRunId = jobRunId;
+        }
+      }
+      optimizationView.value = await cleaningService.getReviewOptimizationSuggestions(params);
+    } catch (error) {
+      ElMessage.error('加载优化建议失败');
+      optimizationView.value = null;
+    } finally {
+      loadingOptimization.value = false;
     }
   };
 
@@ -539,6 +604,7 @@
 
   onMounted(() => {
     loadReviews();
+    loadOptimizationSuggestions();
   });
 </script>
 
@@ -574,6 +640,28 @@
 
   .filter-card {
     margin-bottom: 1rem;
+  }
+
+  .optimization-card {
+    margin-bottom: 1rem;
+  }
+
+  .optimization-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .optimization-meta {
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .suggestion-list {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .filter-row {

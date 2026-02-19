@@ -36,6 +36,8 @@ public class CleaningRollbackRun {
 
 	private String conflictLevelSummary;
 
+	private String selectorJson;
+
 	private LocalDateTime startedTime;
 
 	private LocalDateTime endedTime;

@@ -3,6 +3,7 @@ package com.touhouqing.datasentry.cleaning.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveResult;
+import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackCreateRequest;
 import com.touhouqing.datasentry.cleaning.enums.CleaningRollbackStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobMapper;
@@ -30,7 +31,9 @@ import org.springframework.stereotype.Service;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -70,6 +73,10 @@ public class CleaningRollbackService {
 	private final DataSentryProperties dataSentryProperties;
 
 	public CleaningRollbackRun createRollbackRun(Long runId) {
+		return createRollbackRun(runId, null);
+	}
+
+	public CleaningRollbackRun createRollbackRun(Long runId, CleaningRollbackCreateRequest request) {
 		CleaningJobRun jobRun = jobRunMapper.selectById(runId);
 		if (jobRun == null) {
 			throw new InvalidInputException("Job run not found");
@@ -86,6 +93,7 @@ public class CleaningRollbackService {
 			.totalFailed(0L)
 			.verifyStatus(dataSentryProperties.getCleaning().isRollbackVerificationEnabled() ? "PENDING" : null)
 			.conflictLevelSummary(null)
+			.selectorJson(buildSelectorJson(request))
 			.createdTime(now)
 			.updatedTime(now)
 			.build();
@@ -162,10 +170,10 @@ public class CleaningRollbackService {
 		int highConflicts = 0;
 		int mediumConflicts = 0;
 		int lowConflicts = 0;
+		Selector selector = resolveSelector(run.getSelectorJson());
 		try (Connection connection = pool.getConnection(datasourceService.getDbConfig(datasource))) {
 			while (true) {
-				List<CleaningBackupRecord> records = backupRecordMapper.findByRunAfterId(run.getJobRunId(),
-						checkpointId, BATCH_SIZE);
+				List<CleaningBackupRecord> records = fetchBackupRecords(run.getJobRunId(), checkpointId, selector);
 				if (records.isEmpty()) {
 					LocalDateTime now = LocalDateTime.now();
 					if (dataSentryProperties.getCleaning().isRollbackVerificationEnabled()) {
@@ -445,7 +453,115 @@ public class CleaningRollbackService {
 		return Math.min(limit, MAX_CONFLICT_RESOLVE_LIMIT);
 	}
 
+	private List<CleaningBackupRecord> fetchBackupRecords(Long jobRunId, Long checkpointId, Selector selector) {
+		LambdaQueryWrapper<CleaningBackupRecord> wrapper = new LambdaQueryWrapper<CleaningBackupRecord>()
+			.eq(CleaningBackupRecord::getJobRunId, jobRunId)
+			.orderByAsc(CleaningBackupRecord::getId);
+		if (checkpointId != null) {
+			wrapper.gt(CleaningBackupRecord::getId, checkpointId);
+		}
+		if (selector != null) {
+			if (selector.backupRecordIds() != null && !selector.backupRecordIds().isEmpty()) {
+				wrapper.in(CleaningBackupRecord::getId, selector.backupRecordIds());
+			}
+			if (selector.startTime() != null) {
+				wrapper.ge(CleaningBackupRecord::getCreatedTime, selector.startTime());
+			}
+			if (selector.endTime() != null) {
+				wrapper.le(CleaningBackupRecord::getCreatedTime, selector.endTime());
+			}
+		}
+		wrapper.last("LIMIT " + BATCH_SIZE);
+		return backupRecordMapper.selectList(wrapper);
+	}
+
+	private String buildSelectorJson(CleaningRollbackCreateRequest request) {
+		if (request == null) {
+			return null;
+		}
+		List<Long> backupRecordIds = request.getBackupRecordIds() == null ? List.of()
+				: request.getBackupRecordIds().stream().filter(id -> id != null && id > 0).distinct().toList();
+		LocalDateTime startTime = request.getStartTime();
+		LocalDateTime endTime = request.getEndTime();
+		if (startTime != null && endTime != null && startTime.isAfter(endTime)) {
+			throw new InvalidInputException("startTime 不能晚于 endTime");
+		}
+		Map<String, Object> selector = new LinkedHashMap<>();
+		if (!backupRecordIds.isEmpty()) {
+			selector.put("backupRecordIds", backupRecordIds);
+		}
+		if (startTime != null) {
+			selector.put("startEpochSeconds", startTime.toEpochSecond(ZoneOffset.UTC));
+		}
+		if (endTime != null) {
+			selector.put("endEpochSeconds", endTime.toEpochSecond(ZoneOffset.UTC));
+		}
+		if (selector.isEmpty()) {
+			return null;
+		}
+		try {
+			return JsonUtil.getObjectMapper().writeValueAsString(selector);
+		}
+		catch (Exception e) {
+			throw new InvalidInputException("回滚选择器格式错误");
+		}
+	}
+
+	private Selector resolveSelector(String selectorJson) {
+		if (selectorJson == null || selectorJson.isBlank()) {
+			return null;
+		}
+		try {
+			Map<String, Object> selector = JsonUtil.getObjectMapper().readValue(selectorJson, Map.class);
+			List<Long> backupRecordIds = resolveRecordIds(selector.get("backupRecordIds"));
+			LocalDateTime startTime = resolveEpochSeconds(selector.get("startEpochSeconds"));
+			LocalDateTime endTime = resolveEpochSeconds(selector.get("endEpochSeconds"));
+			return new Selector(backupRecordIds, startTime, endTime);
+		}
+		catch (Exception e) {
+			log.warn("Failed to parse rollback selector selectorJson={}", selectorJson, e);
+			return null;
+		}
+	}
+
+	private List<Long> resolveRecordIds(Object value) {
+		if (!(value instanceof List<?> rawList) || rawList.isEmpty()) {
+			return List.of();
+		}
+		List<Long> result = new ArrayList<>();
+		for (Object raw : rawList) {
+			if (raw == null) {
+				continue;
+			}
+			try {
+				long resolved = Long.parseLong(String.valueOf(raw));
+				if (resolved > 0) {
+					result.add(resolved);
+				}
+			}
+			catch (Exception ignored) {
+			}
+		}
+		return result.stream().distinct().toList();
+	}
+
+	private LocalDateTime resolveEpochSeconds(Object value) {
+		if (value == null) {
+			return null;
+		}
+		try {
+			long epochSeconds = Long.parseLong(String.valueOf(value));
+			return LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), ZoneOffset.UTC);
+		}
+		catch (Exception e) {
+			return null;
+		}
+	}
+
 	private record PkRef(List<String> columns, List<Object> values) {
+	}
+
+	private record Selector(List<Long> backupRecordIds, LocalDateTime startTime, LocalDateTime endTime) {
 	}
 
 	private record RestoreResult(boolean success, Map<String, Object> beforeRow, String message) {

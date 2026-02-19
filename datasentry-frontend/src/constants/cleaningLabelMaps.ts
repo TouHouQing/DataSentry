@@ -91,6 +91,12 @@ export const FALLBACK_OPTIONS: CleaningOptionMetaView = {
     { code: 'NONE', labelZh: '不写回', description: '只检测不修改数据' },
     { code: 'UPDATE', labelZh: '更新写回', description: '覆盖更新目标字段' },
     { code: 'SOFT_DELETE', labelZh: '软删除', description: '标记删除状态' },
+    {
+      code: 'HARD_DELETE',
+      labelZh: '硬删除',
+      description: '直接删除记录（高风险）',
+      caution: '需 delete:hard 权限',
+    },
   ],
   runStatuses: [
     { code: 'QUEUED', labelZh: '排队中' },
@@ -168,6 +174,7 @@ export const FALLBACK_OPTIONS: CleaningOptionMetaView = {
     REVIEW_THEN_WRITEBACK: '命中后会先进入人审，通过后写回。请确认审批流程已准备好。',
     DELETE: '该动作会删除或软删数据，风险极高。请确认已评估回滚方案。',
     WRITEBACK: '正式写回会修改业务数据，建议先用试运行观察结果。',
+    HARD_DELETE: '硬删除会直接删除原始记录，仅在确认权限与回滚预案后执行。',
   },
   ruleTypeUiBehavior: {
     REGEX: { showStructuredConfig: true, showAdvancedJson: true },

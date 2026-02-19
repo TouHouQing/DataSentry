@@ -553,6 +553,7 @@ CREATE TABLE IF NOT EXISTS datasentry_cleaning_rollback_run (
   total_target BIGINT DEFAULT 0 COMMENT '目标总数',
   total_success BIGINT DEFAULT 0 COMMENT '成功总数',
   total_failed BIGINT DEFAULT 0 COMMENT '失败总数',
+  selector_json TEXT COMMENT '回滚选择器JSON',
   started_time TIMESTAMP NULL DEFAULT NULL COMMENT '开始时间',
   ended_time TIMESTAMP NULL DEFAULT NULL COMMENT '结束时间',
   created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

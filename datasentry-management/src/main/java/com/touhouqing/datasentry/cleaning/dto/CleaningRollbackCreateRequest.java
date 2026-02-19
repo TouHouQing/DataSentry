@@ -5,22 +5,19 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CleaningPolicyPublishRequest {
+public class CleaningRollbackCreateRequest {
 
-	private String publishMode;
+	private List<Long> backupRecordIds;
 
-	private BigDecimal grayRatio;
+	private LocalDateTime startTime;
 
-	private String experimentName;
-
-	private String note;
-
-	private String operator;
+	private LocalDateTime endTime;
 
 }

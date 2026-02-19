@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRollbackVersionRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleItem;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
@@ -32,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +51,14 @@ public class CleaningPolicyService {
 
 	private static final Set<String> REGEX_ALLOWED_MASK_MODES = Set.of(RegexRuleConfig.MASK_MODE_PLACEHOLDER,
 			RegexRuleConfig.MASK_MODE_DELETE);
+
+	private static final String PUBLISH_MODE_FULL = "FULL";
+
+	private static final String PUBLISH_MODE_GRAY = "GRAY";
+
+	private static final int DEFAULT_EXPERIMENT_LIMIT = 20;
+
+	private static final int MAX_EXPERIMENT_LIMIT = 200;
 
 	private final CleaningPolicyMapper policyMapper;
 
@@ -258,12 +268,16 @@ public class CleaningPolicyService {
 		if (policy.getEnabled() == null || policy.getEnabled() != 1) {
 			throw new InvalidInputException("策略未启用，无法发布");
 		}
+		String publishMode = resolvePublishMode(request != null ? request.getPublishMode() : null);
+		BigDecimal grayRatio = resolveGrayRatio(publishMode, request != null ? request.getGrayRatio() : null);
 		LocalDateTime now = LocalDateTime.now();
-		policyVersionMapper.demotePublished(policyId);
+		if (PUBLISH_MODE_FULL.equals(publishMode)) {
+			policyVersionMapper.demotePublished(policyId);
+		}
 		CleaningPolicyVersion version = CleaningPolicyVersion.builder()
 			.policyId(policyId)
 			.versionNo(policyVersionMapper.nextVersionNo(policyId))
-			.status("PUBLISHED")
+			.status(PUBLISH_MODE_FULL.equals(publishMode) ? "PUBLISHED" : "GRAY")
 			.configJson(buildPolicySnapshotJson(policy))
 			.defaultAction(policy.getDefaultAction())
 			.createdTime(now)
@@ -273,7 +287,10 @@ public class CleaningPolicyService {
 		releaseTicketMapper.insert(CleaningPolicyReleaseTicket.builder()
 			.policyId(policyId)
 			.versionId(version.getId())
-			.action("PUBLISH")
+			.action(PUBLISH_MODE_FULL.equals(publishMode) ? "PUBLISH" : "PUBLISH_GRAY")
+			.publishMode(publishMode)
+			.grayRatio(grayRatio)
+			.experimentName(resolveExperimentName(request != null ? request.getExperimentName() : null))
 			.note(request != null ? request.getNote() : null)
 			.operator(request != null ? request.getOperator() : null)
 			.createdTime(now)
@@ -309,11 +326,40 @@ public class CleaningPolicyService {
 			.policyId(policyId)
 			.versionId(target.getId())
 			.action("ROLLBACK")
+			.publishMode(PUBLISH_MODE_FULL)
 			.note(request.getNote())
 			.operator(request.getOperator())
 			.createdTime(now)
 			.build());
 		return toVersionView(target);
+	}
+
+	public List<CleaningPolicyExperimentView> listPolicyExperiments(Long policyId, Integer limit) {
+		ensureGovernanceDependencies();
+		if (policyId == null || policyMapper.selectById(policyId) == null) {
+			throw new InvalidInputException("策略不存在");
+		}
+		int safeLimit = resolveExperimentLimit(limit);
+		return releaseTicketMapper
+			.selectList(new LambdaQueryWrapper<CleaningPolicyReleaseTicket>()
+				.eq(CleaningPolicyReleaseTicket::getPolicyId, policyId)
+				.in(CleaningPolicyReleaseTicket::getAction, "PUBLISH", "PUBLISH_GRAY", "ROLLBACK")
+				.orderByDesc(CleaningPolicyReleaseTicket::getId)
+				.last("LIMIT " + safeLimit))
+			.stream()
+			.map(ticket -> CleaningPolicyExperimentView.builder()
+				.ticketId(ticket.getId())
+				.policyId(ticket.getPolicyId())
+				.versionId(ticket.getVersionId())
+				.action(ticket.getAction())
+				.publishMode(ticket.getPublishMode())
+				.grayRatio(ticket.getGrayRatio())
+				.experimentName(ticket.getExperimentName())
+				.note(ticket.getNote())
+				.operator(ticket.getOperator())
+				.createdTime(ticket.getCreatedTime())
+				.build())
+			.toList();
 	}
 
 	private String required(String value, String message) {
@@ -445,6 +491,45 @@ public class CleaningPolicyService {
 		catch (Exception e) {
 			throw new InvalidInputException("JSON 配置格式非法");
 		}
+	}
+
+	private String resolvePublishMode(String publishMode) {
+		if (publishMode == null || publishMode.isBlank()) {
+			return PUBLISH_MODE_FULL;
+		}
+		String normalized = publishMode.trim().toUpperCase();
+		if (!PUBLISH_MODE_FULL.equals(normalized) && !PUBLISH_MODE_GRAY.equals(normalized)) {
+			throw new InvalidInputException("publishMode 仅支持 FULL / GRAY");
+		}
+		return normalized;
+	}
+
+	private BigDecimal resolveGrayRatio(String publishMode, BigDecimal grayRatio) {
+		if (PUBLISH_MODE_FULL.equals(publishMode)) {
+			return null;
+		}
+		if (grayRatio == null) {
+			throw new InvalidInputException("GRAY 发布必须提供 grayRatio");
+		}
+		if (grayRatio.compareTo(BigDecimal.ZERO) <= 0 || grayRatio.compareTo(BigDecimal.ONE) > 0) {
+			throw new InvalidInputException("grayRatio 取值范围为 (0, 1]");
+		}
+		return grayRatio;
+	}
+
+	private String resolveExperimentName(String experimentName) {
+		if (experimentName == null || experimentName.isBlank()) {
+			return null;
+		}
+		String trimmed = experimentName.trim();
+		return trimmed.length() > 128 ? trimmed.substring(0, 128) : trimmed;
+	}
+
+	private int resolveExperimentLimit(Integer limit) {
+		if (limit == null || limit <= 0) {
+			return DEFAULT_EXPERIMENT_LIMIT;
+		}
+		return Math.min(limit, MAX_EXPERIMENT_LIMIT);
 	}
 
 }
