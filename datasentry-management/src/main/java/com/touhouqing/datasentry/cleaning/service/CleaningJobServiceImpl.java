@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -177,9 +178,10 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 		if (job == null) {
 			throw new InvalidInputException("清理任务不存在");
 		}
-		var policySnapshot = policyResolver.resolveSnapshot(job.getPolicyId());
-		String policySnapshotJson = toJson(policySnapshot);
 		LocalDateTime now = LocalDateTime.now();
+		String routeKey = "BATCH_RUN:" + jobId + ":" + now.toEpochSecond(ZoneOffset.UTC);
+		var policySnapshot = policyResolver.resolveSnapshot(job.getPolicyId(), routeKey);
+		String policySnapshotJson = toJson(policySnapshot);
 		CleaningJobRun run = CleaningJobRun.builder()
 			.jobId(jobId)
 			.status(CleaningJobRunStatus.QUEUED.name())

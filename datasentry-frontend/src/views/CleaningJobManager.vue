@@ -523,16 +523,16 @@
             <el-form-item label="回滚范围">
               <el-radio-group v-model="rollbackCreateForm.scope">
                 <el-radio label="RUN">整次 Run</el-radio>
-                <el-radio label="RECORDS">指定备份记录</el-radio>
+                <el-radio label="RECORDS">指定记录</el-radio>
                 <el-radio label="TIME_WINDOW">时间窗</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item v-if="rollbackCreateForm.scope === 'RECORDS'" label="备份记录 ID">
+            <el-form-item v-if="rollbackCreateForm.scope === 'RECORDS'" label="记录 ID">
               <el-input
-                v-model="rollbackCreateForm.backupRecordIdsText"
+                v-model="rollbackCreateForm.recordIdsText"
                 type="textarea"
                 :autosize="{ minRows: 2, maxRows: 4 }"
-                placeholder="请输入备份记录 ID，多个用逗号分隔，例如：1001,1002,1003"
+                placeholder="请输入记录 ID，多个用逗号分隔，例如：1001,1002,1003"
               />
             </el-form-item>
             <el-form-item v-if="rollbackCreateForm.scope === 'TIME_WINDOW'" label="时间窗">
@@ -774,7 +774,7 @@
   const rollbackCreateForm = reactive({
     runId: null,
     scope: 'RUN',
-    backupRecordIdsText: '',
+    recordIdsText: '',
     timeRange: [],
   });
 
@@ -794,7 +794,7 @@
   const resetRollbackCreateForm = () => {
     rollbackCreateForm.runId = null;
     rollbackCreateForm.scope = 'RUN';
-    rollbackCreateForm.backupRecordIdsText = '';
+    rollbackCreateForm.recordIdsText = '';
     rollbackCreateForm.timeRange = [];
   };
 
@@ -1384,7 +1384,7 @@
     rollbackCreateDialogVisible.value = true;
   };
 
-  const parseBackupRecordIds = text => {
+  const parseRecordIds = text => {
     if (!text || !String(text).trim()) {
       return [];
     }
@@ -1403,12 +1403,12 @@
       return {};
     }
     if (rollbackCreateForm.scope === 'RECORDS') {
-      const backupRecordIds = parseBackupRecordIds(rollbackCreateForm.backupRecordIdsText);
-      if (backupRecordIds.length === 0) {
-        ElMessage.error('请输入至少一个有效的备份记录 ID');
+      const recordIds = parseRecordIds(rollbackCreateForm.recordIdsText);
+      if (recordIds.length === 0) {
+        ElMessage.error('请输入至少一个有效的记录 ID');
         return null;
       }
-      return { backupRecordIds };
+      return { recordIds };
     }
     if (rollbackCreateForm.scope === 'TIME_WINDOW') {
       if (
@@ -1495,6 +1495,22 @@
       return;
     }
     try {
+      const actionPrompt = await ElMessageBox.prompt(
+        '输入处置动作（MARK_RESOLVED / AUTO_RETRY / ROUTE_TO_REVIEW）',
+        '处置回滚冲突',
+        {
+          confirmButtonText: '下一步',
+          cancelButtonText: '取消',
+          inputValue: 'MARK_RESOLVED',
+        },
+      );
+      const action = String(actionPrompt?.value || '')
+        .trim()
+        .toUpperCase();
+      if (!['MARK_RESOLVED', 'AUTO_RETRY', 'ROUTE_TO_REVIEW'].includes(action)) {
+        ElMessage.error('处置动作无效');
+        return;
+      }
       const { value } = await ElMessageBox.prompt(
         '输入冲突等级（HIGH / MEDIUM / LOW，留空表示全部）',
         '处置回滚冲突',
@@ -1511,11 +1527,12 @@
         rollbackRunId: rollbackRun.value.id,
         level: level || undefined,
         limit: 200,
+        action,
       });
       ElMessage.success(
         `处置完成：候选 ${result?.totalCandidates || 0}，成功 ${result?.resolved || 0}，跳过 ${
           result?.skipped || 0
-        }`,
+        }，重试成功 ${result?.retried || 0}，转人工审核 ${result?.routedToReview || 0}`,
       );
       rollbackRun.value = await cleaningService.getRollback(rollbackRun.value.id);
     } catch (error) {

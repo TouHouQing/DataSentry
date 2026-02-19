@@ -16,6 +16,8 @@ public class CleaningRollbackCreateRequest {
 
 	private List<Long> backupRecordIds;
 
+	private List<Long> recordIds;
+
 	private LocalDateTime startTime;
 
 	private LocalDateTime endTime;

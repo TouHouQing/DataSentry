@@ -17,4 +17,10 @@ public class CleaningRollbackConflictResolveResult {
 
 	private Integer skipped;
 
+	private String action;
+
+	private Integer retried;
+
+	private Integer routedToReview;
+
 }

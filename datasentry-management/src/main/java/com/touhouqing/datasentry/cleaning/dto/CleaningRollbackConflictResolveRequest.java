@@ -21,4 +21,6 @@ public class CleaningRollbackConflictResolveRequest {
 
 	private Integer limit;
 
+	private String action;
+
 }

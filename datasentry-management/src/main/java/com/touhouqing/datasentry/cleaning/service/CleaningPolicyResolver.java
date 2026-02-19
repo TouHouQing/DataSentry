@@ -3,11 +3,13 @@ package com.touhouqing.datasentry.cleaning.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyReleaseTicketMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyVersionMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningPolicyRuleMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRuleMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyConfig;
+import com.touhouqing.datasentry.cleaning.model.CleaningPolicyReleaseTicket;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyRule;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicyVersion;
@@ -18,6 +20,8 @@ import com.touhouqing.datasentry.util.JsonUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,27 +39,34 @@ public class CleaningPolicyResolver {
 
 	private final CleaningPolicyVersionMapper policyVersionMapper;
 
+	private final CleaningPolicyReleaseTicketMapper releaseTicketMapper;
+
 	private final DataSentryProperties dataSentryProperties;
 
 	public CleaningPolicyResolver(CleaningPolicyMapper policyMapper, CleaningPolicyRuleMapper policyRuleMapper,
 			CleaningRuleMapper ruleMapper, CleaningPolicyVersionMapper policyVersionMapper,
-			DataSentryProperties dataSentryProperties) {
+			CleaningPolicyReleaseTicketMapper releaseTicketMapper, DataSentryProperties dataSentryProperties) {
 		this.policyMapper = policyMapper;
 		this.policyRuleMapper = policyRuleMapper;
 		this.ruleMapper = ruleMapper;
 		this.policyVersionMapper = policyVersionMapper;
+		this.releaseTicketMapper = releaseTicketMapper;
 		this.dataSentryProperties = dataSentryProperties;
 	}
 
 	public CleaningPolicyResolver(CleaningPolicyMapper policyMapper, CleaningPolicyRuleMapper policyRuleMapper,
 			CleaningRuleMapper ruleMapper) {
-		this(policyMapper, policyRuleMapper, ruleMapper, null, new DataSentryProperties());
+		this(policyMapper, policyRuleMapper, ruleMapper, null, null, new DataSentryProperties());
 	}
 
 	public CleaningPolicySnapshot resolveSnapshot(Long policyId) {
-		CleaningPolicyVersion publishedVersion = resolvePublishedVersion(policyId);
-		if (publishedVersion != null) {
-			return resolveSnapshotFromVersion(policyId, publishedVersion);
+		return resolveSnapshot(policyId, null);
+	}
+
+	public CleaningPolicySnapshot resolveSnapshot(Long policyId, String routeKey) {
+		CleaningPolicyVersion resolvedVersion = resolveEffectiveVersion(policyId, routeKey);
+		if (resolvedVersion != null) {
+			return resolveSnapshotFromVersion(policyId, resolvedVersion);
 		}
 		CleaningPolicy policy = policyMapper.selectById(policyId);
 		if (policy == null || policy.getEnabled() == null || policy.getEnabled() != 1) {
@@ -129,14 +140,52 @@ public class CleaningPolicyResolver {
 			.build();
 	}
 
-	private CleaningPolicyVersion resolvePublishedVersion(Long policyId) {
+	private CleaningPolicyVersion resolveEffectiveVersion(Long policyId, String routeKey) {
 		if (policyVersionMapper == null || dataSentryProperties == null) {
 			return null;
 		}
 		if (!dataSentryProperties.getCleaning().isPolicyGovernanceEnabled()) {
 			return null;
 		}
-		return policyVersionMapper.findPublished(policyId);
+		CleaningPolicyVersion publishedVersion = policyVersionMapper.findPublished(policyId);
+		CleaningPolicyVersion grayVersion = policyVersionMapper.findLatestGray(policyId);
+		if (grayVersion == null) {
+			return publishedVersion;
+		}
+		if (publishedVersion == null) {
+			return grayVersion;
+		}
+		BigDecimal grayRatio = resolveGrayRatio(policyId, grayVersion.getId());
+		if (grayRatio.compareTo(BigDecimal.ZERO) <= 0) {
+			return publishedVersion;
+		}
+		return shouldRouteToGray(policyId, routeKey, grayRatio) ? grayVersion : publishedVersion;
+	}
+
+	private BigDecimal resolveGrayRatio(Long policyId, Long versionId) {
+		if (releaseTicketMapper == null || versionId == null) {
+			return BigDecimal.ZERO;
+		}
+		CleaningPolicyReleaseTicket ticket = releaseTicketMapper.findLatestGrayTicket(policyId, versionId);
+		if (ticket == null || ticket.getGrayRatio() == null) {
+			return BigDecimal.ZERO;
+		}
+		return ticket.getGrayRatio();
+	}
+
+	private boolean shouldRouteToGray(Long policyId, String routeKey, BigDecimal grayRatio) {
+		if (routeKey == null || routeKey.isBlank()) {
+			return false;
+		}
+		int threshold = grayRatio.multiply(BigDecimal.valueOf(10000)).setScale(0, RoundingMode.HALF_UP).intValue();
+		if (threshold <= 0) {
+			return false;
+		}
+		if (threshold >= 10000) {
+			return true;
+		}
+		int bucket = Math.floorMod(Objects.hash(policyId, routeKey), 10000);
+		return bucket < threshold;
 	}
 
 	private CleaningPolicyConfig parseVersionConfig(String versionConfigJson, String fallbackConfigJson) {

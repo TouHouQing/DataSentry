@@ -8,12 +8,14 @@ import com.touhouqing.datasentry.cleaning.enums.CleaningRollbackStatus;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackConflictRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackVerifyRecordMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningBackupRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningJob;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
+import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackConflictRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackVerifyRecord;
@@ -52,6 +54,12 @@ public class CleaningRollbackService {
 
 	private static final int MAX_CONFLICT_RESOLVE_LIMIT = 2000;
 
+	private static final String CONFLICT_ACTION_MARK_RESOLVED = "MARK_RESOLVED";
+
+	private static final String CONFLICT_ACTION_AUTO_RETRY = "AUTO_RETRY";
+
+	private static final String CONFLICT_ACTION_ROUTE_TO_REVIEW = "ROUTE_TO_REVIEW";
+
 	private final CleaningRollbackRunMapper rollbackRunMapper;
 
 	private final CleaningBackupRecordMapper backupRecordMapper;
@@ -69,6 +77,8 @@ public class CleaningRollbackService {
 	private final CleaningRollbackVerifyRecordMapper rollbackVerifyRecordMapper;
 
 	private final CleaningRollbackConflictRecordMapper rollbackConflictRecordMapper;
+
+	private final CleaningReviewTaskMapper reviewTaskMapper;
 
 	private final DataSentryProperties dataSentryProperties;
 
@@ -125,12 +135,30 @@ public class CleaningRollbackService {
 	public CleaningRollbackConflictResolveResult resolveConflictRecords(
 			CleaningRollbackConflictResolveRequest request) {
 		List<CleaningRollbackConflictRecord> targets = resolveConflictTargets(request);
+		String action = resolveConflictAction(request != null ? request.getAction() : null);
 		int resolved = 0;
 		int skipped = 0;
+		int retried = 0;
+		int routedToReview = 0;
 		for (CleaningRollbackConflictRecord target : targets) {
+			boolean canResolve = switch (action) {
+				case CONFLICT_ACTION_AUTO_RETRY -> retryConflict(target);
+				case CONFLICT_ACTION_ROUTE_TO_REVIEW -> routeConflictToReview(target);
+				default -> true;
+			};
+			if (!canResolve) {
+				skipped++;
+				continue;
+			}
 			int updated = rollbackConflictRecordMapper.resolveIfUnresolved(target.getId());
 			if (updated > 0) {
 				resolved++;
+				if (CONFLICT_ACTION_AUTO_RETRY.equals(action)) {
+					retried++;
+				}
+				if (CONFLICT_ACTION_ROUTE_TO_REVIEW.equals(action)) {
+					routedToReview++;
+				}
 			}
 			else {
 				skipped++;
@@ -140,6 +168,9 @@ public class CleaningRollbackService {
 			.totalCandidates(targets.size())
 			.resolved(resolved)
 			.skipped(skipped)
+			.action(action)
+			.retried(retried)
+			.routedToReview(routedToReview)
 			.build();
 	}
 
@@ -384,6 +415,15 @@ public class CleaningRollbackService {
 		}
 	}
 
+	private String toJsonSafe(Object value) {
+		try {
+			return JsonUtil.getObjectMapper().writeValueAsString(value);
+		}
+		catch (Exception e) {
+			return null;
+		}
+	}
+
 	private PkRef resolvePk(String pkJson) {
 		Map<String, Object> pkMap = parseJsonMap(pkJson);
 		if (pkMap.isEmpty()) {
@@ -453,6 +493,116 @@ public class CleaningRollbackService {
 		return Math.min(limit, MAX_CONFLICT_RESOLVE_LIMIT);
 	}
 
+	private String resolveConflictAction(String action) {
+		if (action == null || action.isBlank()) {
+			return CONFLICT_ACTION_MARK_RESOLVED;
+		}
+		String normalized = action.trim().toUpperCase();
+		if (CONFLICT_ACTION_MARK_RESOLVED.equals(normalized) || CONFLICT_ACTION_AUTO_RETRY.equals(normalized)
+				|| CONFLICT_ACTION_ROUTE_TO_REVIEW.equals(normalized)) {
+			return normalized;
+		}
+		throw new InvalidInputException("action 仅支持 MARK_RESOLVED / AUTO_RETRY / ROUTE_TO_REVIEW");
+	}
+
+	private boolean retryConflict(CleaningRollbackConflictRecord conflict) {
+		ConflictContext context = resolveConflictContext(conflict);
+		if (context == null || context.backupRecord() == null || context.datasource() == null) {
+			return false;
+		}
+		try {
+			DBConnectionPool pool = connectionPoolFactory.getPoolByDbType(context.datasource().getType());
+			try (Connection connection = pool.getConnection(datasourceService.getDbConfig(context.datasource()))) {
+				RestoreResult restoreResult = restoreRecord(connection, context.backupRecord());
+				if (!restoreResult.success()) {
+					return false;
+				}
+				VerifyResult verifyResult = verifyRestoredRow(connection, context.backupRecord(),
+						restoreResult.beforeRow());
+				recordVerify(conflict.getRollbackRunId(), context.backupRecord(), verifyResult);
+				if (!verifyResult.passed()) {
+					int conflictCount = verifyResult.conflictColumns() != null ? verifyResult.conflictColumns().size()
+							: 0;
+					recordConflict(conflict.getRollbackRunId(), context.backupRecord(),
+							resolveConflictLevel(restoreResult.success(), conflictCount),
+							"retry failed: " + verifyResult.message());
+					return false;
+				}
+				return true;
+			}
+		}
+		catch (Exception e) {
+			log.warn("Retry rollback conflict {} failed", conflict != null ? conflict.getId() : null, e);
+			return false;
+		}
+	}
+
+	private boolean routeConflictToReview(CleaningRollbackConflictRecord conflict) {
+		ConflictContext context = resolveConflictContext(conflict);
+		if (context == null || context.backupRecord() == null || context.job() == null
+				|| context.rollbackRun() == null) {
+			return false;
+		}
+		try {
+			Map<String, Object> beforeRow = loadBeforeRow(context.backupRecord());
+			LocalDateTime now = LocalDateTime.now();
+			String reviewPayload = toJsonSafe(Map.of("rollbackRunId", context.rollbackRun().getId(), "conflictId",
+					conflict.getId(), "backupRecordId", context.backupRecord().getId()));
+			reviewTaskMapper.insert(CleaningReviewTask.builder()
+				.jobRunId(context.rollbackRun().getJobRunId())
+				.agentId(context.job().getAgentId())
+				.datasourceId(context.job().getDatasourceId())
+				.tableName(context.backupRecord().getTableName())
+				.pkJson(context.backupRecord().getPkJson())
+				.pkHash(context.backupRecord().getPkHash())
+				.columnName("ROLLBACK_CONFLICT")
+				.verdict("REVIEW")
+				.categoriesJson(toJsonSafe(List.of("ROLLBACK_CONFLICT")))
+				.sanitizedPreview(toJsonSafe(beforeRow))
+				.actionSuggested("REVIEW_ROLLBACK_CONFLICT")
+				.writebackPayloadJson(reviewPayload)
+				.beforeRowJson(toJsonSafe(beforeRow))
+				.status("PENDING")
+				.reviewReason("Rollback conflict requires manual review: " + conflict.getReason())
+				.version(0)
+				.createdTime(now)
+				.updatedTime(now)
+				.build());
+			return true;
+		}
+		catch (Exception e) {
+			log.warn("Route rollback conflict {} to review failed", conflict != null ? conflict.getId() : null, e);
+			return false;
+		}
+	}
+
+	private ConflictContext resolveConflictContext(CleaningRollbackConflictRecord conflict) {
+		if (conflict == null || conflict.getBackupRecordId() == null || conflict.getRollbackRunId() == null) {
+			return null;
+		}
+		CleaningBackupRecord backupRecord = backupRecordMapper.selectById(conflict.getBackupRecordId());
+		if (backupRecord == null) {
+			return null;
+		}
+		CleaningRollbackRun rollbackRun = rollbackRunMapper.selectById(conflict.getRollbackRunId());
+		if (rollbackRun == null || rollbackRun.getJobRunId() == null) {
+			return null;
+		}
+		CleaningJobRun jobRun = jobRunMapper.selectById(rollbackRun.getJobRunId());
+		if (jobRun == null || jobRun.getJobId() == null) {
+			return null;
+		}
+		CleaningJob job = jobMapper.selectById(jobRun.getJobId());
+		if (job == null || job.getDatasourceId() == null) {
+			return null;
+		}
+		Datasource datasource = datasourceService.getDatasourceById(job.getDatasourceId());
+		if (datasource == null) {
+			return null;
+		}
+		return new ConflictContext(backupRecord, rollbackRun, jobRun, job, datasource);
+	}
+
 	private List<CleaningBackupRecord> fetchBackupRecords(Long jobRunId, Long checkpointId, Selector selector) {
 		LambdaQueryWrapper<CleaningBackupRecord> wrapper = new LambdaQueryWrapper<CleaningBackupRecord>()
 			.eq(CleaningBackupRecord::getJobRunId, jobRunId)
@@ -461,8 +611,8 @@ public class CleaningRollbackService {
 			wrapper.gt(CleaningBackupRecord::getId, checkpointId);
 		}
 		if (selector != null) {
-			if (selector.backupRecordIds() != null && !selector.backupRecordIds().isEmpty()) {
-				wrapper.in(CleaningBackupRecord::getId, selector.backupRecordIds());
+			if (selector.recordIds() != null && !selector.recordIds().isEmpty()) {
+				wrapper.in(CleaningBackupRecord::getId, selector.recordIds());
 			}
 			if (selector.startTime() != null) {
 				wrapper.ge(CleaningBackupRecord::getCreatedTime, selector.startTime());
@@ -479,16 +629,15 @@ public class CleaningRollbackService {
 		if (request == null) {
 			return null;
 		}
-		List<Long> backupRecordIds = request.getBackupRecordIds() == null ? List.of()
-				: request.getBackupRecordIds().stream().filter(id -> id != null && id > 0).distinct().toList();
+		List<Long> recordIds = mergeRecordIds(request.getBackupRecordIds(), request.getRecordIds());
 		LocalDateTime startTime = request.getStartTime();
 		LocalDateTime endTime = request.getEndTime();
 		if (startTime != null && endTime != null && startTime.isAfter(endTime)) {
 			throw new InvalidInputException("startTime 不能晚于 endTime");
 		}
 		Map<String, Object> selector = new LinkedHashMap<>();
-		if (!backupRecordIds.isEmpty()) {
-			selector.put("backupRecordIds", backupRecordIds);
+		if (!recordIds.isEmpty()) {
+			selector.put("recordIds", recordIds);
 		}
 		if (startTime != null) {
 			selector.put("startEpochSeconds", startTime.toEpochSecond(ZoneOffset.UTC));
@@ -513,15 +662,27 @@ public class CleaningRollbackService {
 		}
 		try {
 			Map<String, Object> selector = JsonUtil.getObjectMapper().readValue(selectorJson, Map.class);
-			List<Long> backupRecordIds = resolveRecordIds(selector.get("backupRecordIds"));
+			List<Long> recordIds = mergeRecordIds(resolveRecordIds(selector.get("recordIds")),
+					resolveRecordIds(selector.get("backupRecordIds")));
 			LocalDateTime startTime = resolveEpochSeconds(selector.get("startEpochSeconds"));
 			LocalDateTime endTime = resolveEpochSeconds(selector.get("endEpochSeconds"));
-			return new Selector(backupRecordIds, startTime, endTime);
+			return new Selector(recordIds, startTime, endTime);
 		}
 		catch (Exception e) {
 			log.warn("Failed to parse rollback selector selectorJson={}", selectorJson, e);
 			return null;
 		}
+	}
+
+	private List<Long> mergeRecordIds(List<Long> first, List<Long> second) {
+		List<Long> merged = new ArrayList<>();
+		if (first != null && !first.isEmpty()) {
+			merged.addAll(first);
+		}
+		if (second != null && !second.isEmpty()) {
+			merged.addAll(second);
+		}
+		return merged.stream().filter(id -> id != null && id > 0).distinct().toList();
 	}
 
 	private List<Long> resolveRecordIds(Object value) {
@@ -561,7 +722,11 @@ public class CleaningRollbackService {
 	private record PkRef(List<String> columns, List<Object> values) {
 	}
 
-	private record Selector(List<Long> backupRecordIds, LocalDateTime startTime, LocalDateTime endTime) {
+	private record Selector(List<Long> recordIds, LocalDateTime startTime, LocalDateTime endTime) {
+	}
+
+	private record ConflictContext(CleaningBackupRecord backupRecord, CleaningRollbackRun rollbackRun,
+			CleaningJobRun jobRun, CleaningJob job, Datasource datasource) {
 	}
 
 	private record RestoreResult(boolean success, Map<String, Object> beforeRow, String message) {

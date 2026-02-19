@@ -448,6 +448,7 @@ export interface CleaningRollbackRun {
 
 export interface CleaningRollbackCreateRequest {
   backupRecordIds?: number[];
+  recordIds?: number[];
   startTime?: string;
   endTime?: string;
 }
@@ -467,12 +468,16 @@ export interface CleaningRollbackConflictResolveRequest {
   rollbackRunId?: number;
   level?: string;
   limit?: number;
+  action?: 'MARK_RESOLVED' | 'AUTO_RETRY' | 'ROUTE_TO_REVIEW';
 }
 
 export interface CleaningRollbackConflictResolveResult {
   totalCandidates: number;
   resolved: number;
   skipped: number;
+  action?: string;
+  retried?: number;
+  routedToReview?: number;
 }
 
 export interface CleaningEvidenceRollbackView {

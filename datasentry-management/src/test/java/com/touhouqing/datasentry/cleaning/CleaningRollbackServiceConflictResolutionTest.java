@@ -5,6 +5,7 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningRollbackConflictResolveRes
 import com.touhouqing.datasentry.cleaning.mapper.CleaningBackupRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackConflictRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackRunMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackVerifyRecordMapper;
@@ -58,13 +59,16 @@ public class CleaningRollbackServiceConflictResolutionTest {
 	@Mock
 	private CleaningRollbackConflictRecordMapper rollbackConflictRecordMapper;
 
+	@Mock
+	private CleaningReviewTaskMapper reviewTaskMapper;
+
 	private CleaningRollbackService rollbackService;
 
 	@BeforeEach
 	public void setUp() {
 		rollbackService = new CleaningRollbackService(rollbackRunMapper, backupRecordMapper, jobRunMapper, jobMapper,
 				datasourceService, connectionPoolFactory, encryptionService, rollbackVerifyRecordMapper,
-				rollbackConflictRecordMapper, new DataSentryProperties());
+				rollbackConflictRecordMapper, reviewTaskMapper, new DataSentryProperties());
 	}
 
 	@Test
@@ -86,6 +90,16 @@ public class CleaningRollbackServiceConflictResolutionTest {
 	public void shouldThrowWhenResolveRequestMissingTarget() {
 		assertThrows(InvalidInputException.class,
 				() -> rollbackService.resolveConflictRecords(CleaningRollbackConflictResolveRequest.builder().build()));
+	}
+
+	@Test
+	public void shouldThrowWhenResolveActionUnsupported() {
+		when(rollbackConflictRecordMapper.selectList(any())).thenReturn(List.of());
+		assertThrows(InvalidInputException.class,
+				() -> rollbackService.resolveConflictRecords(CleaningRollbackConflictResolveRequest.builder()
+					.rollbackRunId(1L)
+					.action("UNKNOWN")
+					.build()));
 	}
 
 }

@@ -67,7 +67,7 @@ public class CleaningServiceImpl implements CleaningService {
 
 	private CleaningResponse execute(Long agentId, CleaningCheckRequest request, String traceId,
 			boolean sanitizeRequested) {
-		CleaningPolicySnapshot snapshot = resolvePolicySnapshot(agentId, request);
+		CleaningPolicySnapshot snapshot = resolvePolicySnapshot(agentId, request, traceId);
 		CleaningJob onlineJob = resolveOnlineBudgetJob(agentId);
 		long estimatedTokens = tokenEstimator.estimateTokens(request.getText());
 		boolean failClosed = isFailClosedTriggered(onlineJob, estimatedTokens);
@@ -152,7 +152,7 @@ public class CleaningServiceImpl implements CleaningService {
 				pricing.inputPricePer1k(), pricing.outputPricePer1k(), pricing.currency()));
 	}
 
-	private CleaningPolicySnapshot resolvePolicySnapshot(Long agentId, CleaningCheckRequest request) {
+	private CleaningPolicySnapshot resolvePolicySnapshot(Long agentId, CleaningCheckRequest request, String traceId) {
 		Long policyId = request.getPolicyId();
 		if (policyId == null) {
 			CleaningBinding binding = resolveBinding(agentId, request.getScene());
@@ -166,7 +166,7 @@ public class CleaningServiceImpl implements CleaningService {
 		if (policyId == null) {
 			throw new InvalidInputException("未找到可用的清理策略：请在请求中传 policyId，或为当前 Agent 配置 ONLINE_TEXT 默认绑定");
 		}
-		return policyResolver.resolveSnapshot(policyId);
+		return policyResolver.resolveSnapshot(policyId, traceId);
 	}
 
 	private CleaningBinding resolveBinding(Long agentId, String scene) {

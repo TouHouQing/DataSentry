@@ -25,6 +25,14 @@ public interface CleaningPolicyVersionMapper extends BaseMapper<CleaningPolicyVe
 					.last("LIMIT 1"));
 	}
 
+	default CleaningPolicyVersion findLatestGray(Long policyId) {
+		return selectOne(
+				new LambdaQueryWrapper<CleaningPolicyVersion>().eq(CleaningPolicyVersion::getPolicyId, policyId)
+					.eq(CleaningPolicyVersion::getStatus, "GRAY")
+					.orderByDesc(CleaningPolicyVersion::getVersionNo)
+					.last("LIMIT 1"));
+	}
+
 	default void demotePublished(Long policyId) {
 		update(null,
 				new LambdaUpdateWrapper<CleaningPolicyVersion>().eq(CleaningPolicyVersion::getPolicyId, policyId)

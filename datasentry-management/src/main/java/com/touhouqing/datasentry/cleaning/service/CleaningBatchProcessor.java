@@ -969,7 +969,7 @@ public class CleaningBatchProcessor {
 				log.warn("Failed to parse policy snapshot for run {}", run.getId(), e);
 			}
 		}
-		return policyResolver.resolveSnapshot(job.getPolicyId());
+		return policyResolver.resolveSnapshot(job.getPolicyId(), "BATCH_RUN:" + run.getId());
 	}
 
 	private CleaningReviewPolicy parseReviewPolicy(String policy) {
