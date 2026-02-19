@@ -25,6 +25,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.pipeline.CleaningPipeline;
 import com.touhouqing.datasentry.cleaning.util.CleaningJsonPathProcessor;
+import com.touhouqing.datasentry.cleaning.util.CleaningOutboundSanitizer;
 import com.touhouqing.datasentry.cleaning.util.CleaningWritebackValidator;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPool;
 import com.touhouqing.datasentry.connector.pool.DBConnectionPoolFactory;
@@ -514,9 +515,13 @@ public class CleaningBatchProcessor {
 			return Map.of();
 		}
 		int chunkBatchSize = resolveL3BatchSize();
+		boolean outboundSanitizeEnabled = snapshot.getConfig() != null
+				&& snapshot.getConfig().resolvedOutboundSanitizeEnabled();
+		String outboundSanitizeMode = snapshot.getConfig() != null ? snapshot.getConfig().resolvedOutboundSanitizeMode()
+				: "MASK_PII";
 		Map<String, Map<String, Map<Long, LlmDetector.LlmDetectResult>>> result = new ConcurrentHashMap<>();
 		List<L3BatchGroup> groups = buildL3BatchGroups(rows, pkColumns, targetColumns, jsonPathMappings, llmRules,
-				chunkBatchSize);
+				chunkBatchSize, outboundSanitizeEnabled, outboundSanitizeMode);
 		if (groups.isEmpty()) {
 			return Map.of();
 		}
@@ -599,7 +604,7 @@ public class CleaningBatchProcessor {
 
 	private List<L3BatchGroup> buildL3BatchGroups(List<Map<String, String>> rows, List<String> pkColumns,
 			List<String> targetColumns, Map<String, String> jsonPathMappings, List<CleaningRule> llmRules,
-			int batchSize) {
+			int batchSize, boolean outboundSanitizeEnabled, String outboundSanitizeMode) {
 		List<L3BatchGroup> groups = new ArrayList<>();
 		for (String column : targetColumns) {
 			for (CleaningRule rule : llmRules) {
@@ -618,6 +623,9 @@ public class CleaningBatchProcessor {
 					String sourceText = resolveSourceText(column, rawValue, jsonPathMappings);
 					if (sourceText == null || sourceText.isBlank()) {
 						continue;
+					}
+					if (outboundSanitizeEnabled) {
+						sourceText = CleaningOutboundSanitizer.sanitize(sourceText, outboundSanitizeMode);
 					}
 					String itemId = buildBatchItemId(pkValueKey, column, rule.getId());
 					refs.add(new L3ItemRef(itemId, pkValueKey, sourceText));

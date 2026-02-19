@@ -268,6 +268,22 @@
             </el-form-item>
           </div>
 
+          <el-divider>AI 出站合规</el-divider>
+          <el-form-item label="出站脱敏">
+            <el-switch v-model="policyForm.outboundSanitizeEnabled" />
+            <div class="field-help">启用后，发送到外部 LLM / Cloud API 的文本先做脱敏。</div>
+          </el-form-item>
+
+          <el-form-item label="出站脱敏模式">
+            <el-select
+              v-model="policyForm.outboundSanitizeMode"
+              style="width: 220px"
+              :disabled="!policyForm.outboundSanitizeEnabled"
+            >
+              <el-option label="MASK_PII（手机号/邮箱/证件/卡号）" value="MASK_PII" />
+            </el-select>
+          </el-form-item>
+
           <el-divider>规则绑定与优先级</el-divider>
           <el-table :data="ruleSelections" style="width: 100%" height="280">
             <el-table-column width="60">
@@ -924,6 +940,8 @@
     l2Threshold: 0.6,
     shadowEnabled: false,
     shadowSampleRatio: 0,
+    outboundSanitizeEnabled: false,
+    outboundSanitizeMode: 'MASK_PII',
   });
   const ruleSelections = ref([]);
   const templateRuleSelections = ref([]);
@@ -1333,6 +1351,8 @@
     policyForm.l2Threshold = config.l2Threshold ?? 0.6;
     policyForm.shadowEnabled = config.shadowEnabled ?? false;
     policyForm.shadowSampleRatio = config.shadowSampleRatio ?? 0;
+    policyForm.outboundSanitizeEnabled = config.outboundSanitizeEnabled ?? false;
+    policyForm.outboundSanitizeMode = config.outboundSanitizeMode || 'MASK_PII';
 
     ruleSelections.value = rules.value.map(rule => {
       const binding = policy?.rules?.find(item => item.ruleId === rule.id);
@@ -1730,6 +1750,8 @@
           l2Threshold: policyForm.l2Threshold,
           shadowEnabled: policyForm.shadowEnabled,
           shadowSampleRatio: policyForm.shadowSampleRatio,
+          outboundSanitizeEnabled: policyForm.outboundSanitizeEnabled,
+          outboundSanitizeMode: policyForm.outboundSanitizeMode,
         },
       };
 

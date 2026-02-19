@@ -12,6 +12,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningPolicySnapshot;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.model.NodeResult;
+import com.touhouqing.datasentry.cleaning.util.CleaningOutboundSanitizer;
 import com.touhouqing.datasentry.properties.DataSentryProperties;
 import com.touhouqing.datasentry.cleaning.util.CleaningAllowlistMatcher;
 import com.touhouqing.datasentry.util.JsonUtil;
@@ -80,7 +81,8 @@ public class DetectNode implements PipelineNode {
 		boolean runL3 = !disableL3 && l3Enabled && hasLlmRules;
 		context.getMetadata().put("l3Attempted", runL3);
 		if (runL3) {
-			List<L3RuleResult> ruleResults = resolvePrecomputedOrDetect(context, text, llmRules);
+			String l3Text = resolveL3OutboundText(text, policyConfig, context);
+			List<L3RuleResult> ruleResults = resolvePrecomputedOrDetect(context, l3Text, llmRules);
 			for (L3RuleResult ruleResult : ruleResults) {
 				LlmDetector.LlmDetectResult llmResult = ruleResult.result();
 				String mode = llmResult.mode() != null ? llmResult.mode() : "UNKNOWN";
@@ -170,6 +172,19 @@ public class DetectNode implements PipelineNode {
 	private boolean isDisableL3(CleaningContext context) {
 		Object value = context.getMetadata().get("disableL3");
 		return value instanceof Boolean && (Boolean) value;
+	}
+
+	private String resolveL3OutboundText(String text, CleaningPolicyConfig config, CleaningContext context) {
+		if (text == null || text.isBlank() || config == null || !config.resolvedOutboundSanitizeEnabled()) {
+			return text;
+		}
+		String mode = config.resolvedOutboundSanitizeMode();
+		String outboundText = CleaningOutboundSanitizer.sanitize(text, mode);
+		if (!text.equals(outboundText) && context != null) {
+			context.getMetadata().put("outboundSanitized", true);
+			context.getMetadata().put("outboundSanitizeMode", mode);
+		}
+		return outboundText;
 	}
 
 	@SuppressWarnings("unchecked")

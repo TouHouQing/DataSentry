@@ -27,6 +27,10 @@ public class CleaningPolicyConfig {
 
 	private String highRiskSanitizationMode;
 
+	private Boolean outboundSanitizeEnabled;
+
+	private String outboundSanitizeMode;
+
 	public double resolvedBlockThreshold() {
 		return blockThreshold != null ? blockThreshold : 0.7;
 	}
@@ -60,6 +64,14 @@ public class CleaningPolicyConfig {
 
 	public String resolvedHighRiskSanitizationMode() {
 		return highRiskSanitizationMode != null ? highRiskSanitizationMode : "MITIGATE";
+	}
+
+	public boolean resolvedOutboundSanitizeEnabled() {
+		return outboundSanitizeEnabled != null && outboundSanitizeEnabled;
+	}
+
+	public String resolvedOutboundSanitizeMode() {
+		return outboundSanitizeMode != null ? outboundSanitizeMode : "MASK_PII";
 	}
 
 }

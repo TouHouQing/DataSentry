@@ -6,6 +6,7 @@ import com.touhouqing.datasentry.cleaning.model.CleaningPolicyConfig;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.model.Finding;
 import com.touhouqing.datasentry.cleaning.service.CleaningOpsStateService;
+import com.touhouqing.datasentry.cleaning.util.CleaningOutboundSanitizer;
 import com.touhouqing.datasentry.properties.DataSentryProperties;
 import com.touhouqing.datasentry.util.JsonUtil;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +59,8 @@ public class CloudApiL2DetectionProvider implements L2DetectionProvider {
 		double threshold = Math.max(0.0, Math.min(1.0, Math.max(providerThreshold, policyThreshold)));
 		long startNanos = System.nanoTime();
 		try {
-			CloudApiResult result = callCloudApi(text, rule, threshold, cloudApi);
+			String outboundText = resolveOutboundText(text, config);
+			CloudApiResult result = callCloudApi(outboundText, rule, threshold, cloudApi);
 			opsStateService.markCloudInferenceSuccess(elapsedMillis(startNanos));
 			if (result.score() < threshold) {
 				return List.of();
@@ -196,6 +198,13 @@ public class CloudApiL2DetectionProvider implements L2DetectionProvider {
 
 	private long elapsedMillis(long startNanos) {
 		return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+	}
+
+	private String resolveOutboundText(String text, CleaningPolicyConfig config) {
+		if (config == null || !config.resolvedOutboundSanitizeEnabled()) {
+			return text;
+		}
+		return CleaningOutboundSanitizer.sanitize(text, config.resolvedOutboundSanitizeMode());
 	}
 
 	private record CloudApiResult(double score, String label) {
