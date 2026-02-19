@@ -42,6 +42,8 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 
 	private final CleaningEvidenceService evidenceService;
 
+	private final CleaningOpsStateService opsStateService;
+
 	private final DataSentryProperties dataSentryProperties;
 
 	@Override
@@ -278,7 +280,15 @@ public class CleaningJobServiceImpl implements CleaningJobService {
 
 	@Override
 	public CleaningEvidenceBundleView exportEvidenceBundle(Long runId) {
-		return evidenceService.exportByRunId(runId);
+		try {
+			CleaningEvidenceBundleView view = evidenceService.exportByRunId(runId);
+			opsStateService.markEvidenceBundleExportSuccess();
+			return view;
+		}
+		catch (RuntimeException e) {
+			opsStateService.markEvidenceBundleExportFailure();
+			throw e;
+		}
 	}
 
 	private String resolveEnum(String value, String defaultValue, Class<? extends Enum<?>> enumType) {

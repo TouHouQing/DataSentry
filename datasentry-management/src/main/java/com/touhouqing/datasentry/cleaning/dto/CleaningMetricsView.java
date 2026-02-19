@@ -26,11 +26,25 @@ public class CleaningMetricsView {
 
 	private Long readyDlq;
 
+	private Long totalScannedRecords;
+
+	private Long totalFlaggedRecords;
+
+	private Long totalWrittenRecords;
+
+	private Long totalFailedRecords;
+
 	private BigDecimal totalCost;
 
 	private BigDecimal onlineCost;
 
 	private BigDecimal batchCost;
+
+	private Double avgCostPerRun;
+
+	private Double costPerTenThousandRecords;
+
+	private Double costPerFlaggedRecord;
 
 	private LocalDateTime lastPricingSyncTime;
 
@@ -87,6 +101,24 @@ public class CleaningMetricsView {
 	private Double rollbackSuccessRate;
 
 	private Double rollbackConflictRate;
+
+	private Long totalReviewFeedbacks;
+
+	private Long reviewDisputedFeedbacks;
+
+	private Double reviewDisputeRate;
+
+	private Long totalAuditRecords;
+
+	private Long auditCompleteRecords;
+
+	private Double auditCompletenessRate;
+
+	private Long evidenceBundleExportSuccessCount;
+
+	private Long evidenceBundleExportFailureCount;
+
+	private Double evidenceBundleExportSuccessRate;
 
 	private CleaningReviewOpsView reviewOps;
 

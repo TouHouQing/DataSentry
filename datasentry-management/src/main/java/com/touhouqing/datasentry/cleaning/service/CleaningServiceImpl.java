@@ -91,8 +91,8 @@ public class CleaningServiceImpl implements CleaningService {
 				traceId, agentId, request.getScene(), snapshot.getPolicyId(), snapshot.getPolicyName(),
 				sanitizeRequested, estimatedTokens, failClosed, allowlists.size());
 		CleaningContext result = pipeline.execute(context, sanitizeRequested);
-		shadowService.compareAndRecordIfEnabled(result, snapshot,
-				() -> pipeline.execute(buildShadowContext(result, snapshot), sanitizeRequested));
+		CleaningShadowService.ShadowCompareOutcome shadowCompareOutcome = shadowService.compareAndRecordIfEnabled(
+				result, snapshot, () -> pipeline.execute(buildShadowContext(result, snapshot), sanitizeRequested));
 		shadowService.submitIfEnabled(result, snapshot.getConfig());
 		recordOnlineCost(agentId, traceId, estimatedTokens, failClosed);
 		log.info("Cleaning online result traceId={} agentId={} verdict={} categories={} findings={}", traceId, agentId,
@@ -102,6 +102,11 @@ public class CleaningServiceImpl implements CleaningService {
 			.verdict(result.getVerdict() != null ? result.getVerdict().name() : null)
 			.categories(resolveCategories(result.getFindings()))
 			.sanitizedText(sanitizeRequested ? result.getSanitizedText() : null)
+			.traceId(traceId)
+			.policyId(snapshot.getPolicyId())
+			.policyVersionId(snapshot.getPolicyVersionId())
+			.shadowCompared(shadowCompareOutcome.compared())
+			.shadowDiffLevel(shadowCompareOutcome.diffLevel())
 			.build();
 	}
 

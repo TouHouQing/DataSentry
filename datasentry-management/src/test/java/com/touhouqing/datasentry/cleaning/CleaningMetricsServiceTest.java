@@ -4,7 +4,12 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningAlertView;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningCostLedgerMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningDlqMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRecordMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackConflictRecordMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewFeedbackRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningShadowCompareRecordMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.service.CleaningMetricsService;
 import com.touhouqing.datasentry.cleaning.service.CleaningOpsStateService;
@@ -36,6 +41,21 @@ public class CleaningMetricsServiceTest {
 	@Mock
 	private CleaningReviewTaskMapper reviewTaskMapper;
 
+	@Mock
+	private CleaningRecordMapper recordMapper;
+
+	@Mock
+	private CleaningReviewFeedbackRecordMapper reviewFeedbackRecordMapper;
+
+	@Mock
+	private CleaningShadowCompareRecordMapper shadowCompareRecordMapper;
+
+	@Mock
+	private CleaningRollbackRunMapper rollbackRunMapper;
+
+	@Mock
+	private CleaningRollbackConflictRecordMapper rollbackConflictRecordMapper;
+
 	private CleaningOpsStateService opsStateService;
 
 	private CleaningMetricsService metricsService;
@@ -43,10 +63,19 @@ public class CleaningMetricsServiceTest {
 	@BeforeEach
 	public void setUp() {
 		opsStateService = new CleaningOpsStateService();
-		metricsService = new CleaningMetricsService(jobRunMapper, dlqMapper, costLedgerMapper, reviewTaskMapper,
-				opsStateService);
+		metricsService = new CleaningMetricsService(jobRunMapper, dlqMapper, costLedgerMapper, recordMapper,
+				reviewTaskMapper, reviewFeedbackRecordMapper, shadowCompareRecordMapper, rollbackRunMapper,
+				rollbackConflictRecordMapper, opsStateService);
 		when(jobRunMapper.selectCount(any())).thenReturn(0L);
+		when(jobRunMapper.selectList(any())).thenReturn(List.of());
 		when(dlqMapper.selectCount(any())).thenReturn(0L);
+		when(costLedgerMapper.selectList(any())).thenReturn(List.of());
+		when(recordMapper.selectCount(any())).thenReturn(0L);
+		when(reviewFeedbackRecordMapper.selectCount(any())).thenReturn(0L);
+		when(shadowCompareRecordMapper.selectCount(any())).thenReturn(0L);
+		when(rollbackRunMapper.selectCount(any())).thenReturn(0L);
+		when(rollbackConflictRecordMapper.selectCount(any())).thenReturn(0L);
+		when(rollbackConflictRecordMapper.selectList(any())).thenReturn(List.of());
 		when(reviewTaskMapper.selectList(any())).thenReturn(List.of());
 	}
 

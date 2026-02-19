@@ -92,6 +92,67 @@
         </el-row>
 
         <el-row :gutter="16" class="metrics-row">
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">扫描 / 命中 / 写回</div>
+              <div class="metric-value tiny-value">
+                {{ metrics.totalScannedRecords || 0 }} / {{ metrics.totalFlaggedRecords || 0 }} /
+                {{ metrics.totalWrittenRecords || 0 }}
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">万条处理成本</div>
+              <div class="metric-value">¥ {{ formatCost(metrics.costPerTenThousandRecords) }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">单次 Run 平均成本</div>
+              <div class="metric-value">¥ {{ formatCost(metrics.avgCostPerRun) }}</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card warning">
+              <div class="metric-label">争议反馈率</div>
+              <div class="metric-value tiny-value">
+                {{ formatPercent(metrics.reviewDisputeRate) }}（{{
+                  metrics.reviewDisputedFeedbacks || 0
+                }}
+                / {{ metrics.totalReviewFeedbacks || 0 }}）
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">审计完整率</div>
+              <div class="metric-value tiny-value">
+                {{ formatPercent(metrics.auditCompletenessRate) }}（{{
+                  metrics.auditCompleteRecords || 0
+                }}
+                / {{ metrics.totalAuditRecords || 0 }}）
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-card shadow="hover" class="metric-card">
+              <div class="metric-label">证据包导出成功率</div>
+              <div class="metric-value tiny-value">
+                {{ formatPercent(metrics.evidenceBundleExportSuccessRate) }}（{{
+                  metrics.evidenceBundleExportSuccessCount || 0
+                }}
+                /
+                {{
+                  (metrics.evidenceBundleExportSuccessCount || 0) +
+                  (metrics.evidenceBundleExportFailureCount || 0)
+                }}）
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" class="metrics-row">
           <el-col :xs="24" :sm="12" :md="8" :lg="6">
             <el-card shadow="hover" class="metric-card">
               <div class="metric-label">Shadow 对比总量</div>
@@ -240,6 +301,34 @@
             </el-card>
           </el-col>
         </el-row>
+
+        <el-card class="panel" shadow="never" v-loading="loadingOptimization">
+          <template #header>
+            <div class="panel-header">
+              <span>高争议规则（TOP）</span>
+            </div>
+          </template>
+          <el-empty
+            v-if="!optimizationView || (optimizationView.disputedRules || []).length === 0"
+            description="暂无争议规则数据"
+          />
+          <el-table v-else :data="optimizationView.disputedRules" stripe>
+            <el-table-column prop="category" label="风险类别" min-width="140" />
+            <el-table-column label="建议动作" min-width="120">
+              <template #default="scope">
+                {{ formatSuggestedAction(scope.row.actionSuggested) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="total" label="样本数" width="100" />
+            <el-table-column prop="rejected" label="驳回数" width="100" />
+            <el-table-column prop="conflict" label="冲突数" width="100" />
+            <el-table-column label="争议率" width="120">
+              <template #default="scope">
+                {{ formatPercent((scope.row.disputeRate || 0) * 100) }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
 
         <el-card class="panel" shadow="never">
           <template #header>
@@ -392,6 +481,7 @@
 
   const loadingAll = ref(false);
   const loadingDlq = ref(false);
+  const loadingOptimization = ref(false);
 
   const metrics = reactive({
     totalRuns: 0,
@@ -400,9 +490,16 @@
     hardExceededRuns: 0,
     totalDlq: 0,
     readyDlq: 0,
+    totalScannedRecords: 0,
+    totalFlaggedRecords: 0,
+    totalWrittenRecords: 0,
+    totalFailedRecords: 0,
     totalCost: 0,
     onlineCost: 0,
     batchCost: 0,
+    avgCostPerRun: 0,
+    costPerTenThousandRecords: 0,
+    costPerFlaggedRecord: 0,
     pricingSyncFailureCount: 0,
     webhookPushSuccessCount: 0,
     webhookPushFailureCount: 0,
@@ -430,6 +527,15 @@
     totalRollbackConflicts: 0,
     rollbackSuccessRate: 0,
     rollbackConflictRate: 0,
+    totalReviewFeedbacks: 0,
+    reviewDisputedFeedbacks: 0,
+    reviewDisputeRate: 0,
+    totalAuditRecords: 0,
+    auditCompleteRecords: 0,
+    auditCompletenessRate: 0,
+    evidenceBundleExportSuccessCount: 0,
+    evidenceBundleExportFailureCount: 0,
+    evidenceBundleExportSuccessRate: 100,
     reviewOps: {
       pendingTasks: 0,
       pendingHighRiskTasks: 0,
@@ -446,6 +552,7 @@
   const dlqRecords = ref([]);
   const costLedgers = ref([]);
   const pricingCatalog = ref([]);
+  const optimizationView = ref(null);
   const dlqStatus = ref('READY');
 
   const formatCost = value => {
@@ -517,6 +624,18 @@
     return labels[channel] || channel || '-';
   };
 
+  const formatSuggestedAction = action => {
+    const labels = {
+      WRITEBACK: '写回',
+      SOFT_DELETE: '软删',
+      HARD_DELETE: '硬删',
+      REVIEW_ONLY: '仅人审',
+      BLOCK: '拦截',
+      DETECT_ONLY: '仅检测',
+    };
+    return labels[action] || action || '-';
+  };
+
   const loadMetrics = async () => {
     const summary = await cleaningService.getMetricsSummary();
     Object.assign(metrics, summary || {});
@@ -545,6 +664,20 @@
     pricingCatalog.value = (list || []).slice(0, 50);
   };
 
+  const loadOptimizationView = async () => {
+    loadingOptimization.value = true;
+    try {
+      optimizationView.value = await cleaningService.getReviewOptimizationSuggestions({
+        limit: 200,
+      });
+    } catch (error) {
+      optimizationView.value = null;
+      ElMessage.error('加载争议规则失败');
+    } finally {
+      loadingOptimization.value = false;
+    }
+  };
+
   const retryDlq = async id => {
     try {
       await cleaningService.retryDlq(id);
@@ -568,6 +701,7 @@
         loadDlq(),
         loadCostLedgers(),
         loadPricingCatalog(),
+        loadOptimizationView(),
       ]);
     } catch (error) {
       ElMessage.error('加载运维数据失败');

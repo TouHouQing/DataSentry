@@ -7,15 +7,19 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningReviewOpsView;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningCostLedgerMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningDlqMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningJobRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackConflictRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningRollbackRunMapper;
+import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewFeedbackRecordMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningReviewTaskMapper;
 import com.touhouqing.datasentry.cleaning.mapper.CleaningShadowCompareRecordMapper;
 import com.touhouqing.datasentry.cleaning.model.CleaningCostLedger;
 import com.touhouqing.datasentry.cleaning.model.CleaningDlqRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningJobRun;
+import com.touhouqing.datasentry.cleaning.model.CleaningRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackConflictRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningRollbackRun;
+import com.touhouqing.datasentry.cleaning.model.CleaningReviewFeedbackRecord;
 import com.touhouqing.datasentry.cleaning.model.CleaningReviewTask;
 import com.touhouqing.datasentry.cleaning.model.CleaningShadowCompareRecord;
 import lombok.RequiredArgsConstructor;
@@ -40,13 +44,19 @@ public class CleaningMetricsService {
 
 	private static final int REVIEW_HANDLE_SAMPLE_LIMIT = 500;
 
+	private static final double AUDIT_COMPLETENESS_ALERT_THRESHOLD = 95D;
+
 	private final CleaningJobRunMapper jobRunMapper;
 
 	private final CleaningDlqMapper dlqMapper;
 
 	private final CleaningCostLedgerMapper costLedgerMapper;
 
+	private final CleaningRecordMapper recordMapper;
+
 	private final CleaningReviewTaskMapper reviewTaskMapper;
+
+	private final CleaningReviewFeedbackRecordMapper reviewFeedbackRecordMapper;
 
 	private final CleaningShadowCompareRecordMapper shadowCompareRecordMapper;
 
@@ -67,6 +77,7 @@ public class CleaningMetricsService {
 		Long totalDlq = dlqMapper.selectCount(new LambdaQueryWrapper<>());
 		Long readyDlq = dlqMapper
 			.selectCount(new LambdaQueryWrapper<CleaningDlqRecord>().eq(CleaningDlqRecord::getStatus, "READY"));
+		RunTotals runTotals = buildRunTotals();
 		CleaningReviewOpsView reviewOps = buildReviewOpsSummary();
 
 		List<CleaningCostLedger> ledgers = costLedgerMapper.selectList(new LambdaQueryWrapper<>());
@@ -106,6 +117,24 @@ public class CleaningMetricsService {
 				? (defaultLong(rollbackSucceededRuns) * 100.0D) / defaultLong(totalRollbackRuns) : 0D;
 		double rollbackConflictRate = defaultLong(totalRollbackRuns) > 0
 				? (conflictRunCount * 100.0D) / defaultLong(totalRollbackRuns) : 0D;
+		Long totalReviewFeedbacks = reviewFeedbackRecordMapper.selectCount(new LambdaQueryWrapper<>());
+		Long reviewDisputedFeedbacks = reviewFeedbackRecordMapper
+			.selectCount(new LambdaQueryWrapper<CleaningReviewFeedbackRecord>()
+				.in(CleaningReviewFeedbackRecord::getFinalStatus, "REJECTED", "CONFLICT"));
+		double reviewDisputeRate = percent(defaultLong(reviewDisputedFeedbacks), defaultLong(totalReviewFeedbacks));
+		AuditStats auditStats = buildAuditStats();
+
+		double avgCostPerRun = defaultLong(totalRuns) > 0 ? totalCost.doubleValue() / defaultLong(totalRuns) : 0D;
+		double costPerTenThousandRecords = runTotals.totalScanned() > 0
+				? totalCost.doubleValue() * 10000D / runTotals.totalScanned() : 0D;
+		double costPerFlaggedRecord = runTotals.totalFlagged() > 0 ? totalCost.doubleValue() / runTotals.totalFlagged()
+				: 0D;
+
+		long evidenceBundleExportSuccessCount = opsStateService.getEvidenceBundleExportSuccessCount();
+		long evidenceBundleExportFailureCount = opsStateService.getEvidenceBundleExportFailureCount();
+		long evidenceBundleExportTotal = evidenceBundleExportSuccessCount + evidenceBundleExportFailureCount;
+		double evidenceBundleExportSuccessRate = evidenceBundleExportTotal > 0
+				? (evidenceBundleExportSuccessCount * 100.0D) / evidenceBundleExportTotal : 100D;
 
 		return CleaningMetricsView.builder()
 			.totalRuns(defaultLong(totalRuns))
@@ -114,9 +143,16 @@ public class CleaningMetricsService {
 			.hardExceededRuns(defaultLong(hardExceededRuns))
 			.totalDlq(defaultLong(totalDlq))
 			.readyDlq(defaultLong(readyDlq))
+			.totalScannedRecords(runTotals.totalScanned())
+			.totalFlaggedRecords(runTotals.totalFlagged())
+			.totalWrittenRecords(runTotals.totalWritten())
+			.totalFailedRecords(runTotals.totalFailed())
 			.totalCost(totalCost)
 			.onlineCost(onlineCost)
 			.batchCost(batchCost)
+			.avgCostPerRun(avgCostPerRun)
+			.costPerTenThousandRecords(costPerTenThousandRecords)
+			.costPerFlaggedRecord(costPerFlaggedRecord)
 			.lastPricingSyncTime(opsStateService.getLastPricingSyncTime())
 			.pricingSyncFailureCount(opsStateService.getPricingSyncFailureCount())
 			.webhookPushSuccessCount(opsStateService.getWebhookPushSuccessCount())
@@ -145,6 +181,15 @@ public class CleaningMetricsService {
 			.totalRollbackConflicts(defaultLong(totalRollbackConflicts))
 			.rollbackSuccessRate(rollbackSuccessRate)
 			.rollbackConflictRate(rollbackConflictRate)
+			.totalReviewFeedbacks(defaultLong(totalReviewFeedbacks))
+			.reviewDisputedFeedbacks(defaultLong(reviewDisputedFeedbacks))
+			.reviewDisputeRate(reviewDisputeRate)
+			.totalAuditRecords(auditStats.total())
+			.auditCompleteRecords(auditStats.complete())
+			.auditCompletenessRate(auditStats.completenessRate())
+			.evidenceBundleExportSuccessCount(evidenceBundleExportSuccessCount)
+			.evidenceBundleExportFailureCount(evidenceBundleExportFailureCount)
+			.evidenceBundleExportSuccessRate(evidenceBundleExportSuccessRate)
 			.reviewOps(reviewOps)
 			.build();
 	}
@@ -217,6 +262,24 @@ public class CleaningMetricsService {
 				.level("WARN")
 				.code("L2_CLOUD_API_DEGRADED")
 				.message("L2 Cloud API Provider 当前处于降级状态：" + l2ProviderStatus)
+				.createdTime(LocalDateTime.now())
+				.build());
+		}
+		long evidenceBundleExportFailureCount = opsStateService.getEvidenceBundleExportFailureCount();
+		if (evidenceBundleExportFailureCount > 0) {
+			alerts.add(CleaningAlertView.builder()
+				.level("WARN")
+				.code("EVIDENCE_EXPORT_FAILED")
+				.message("证据包导出累计失败次数：" + evidenceBundleExportFailureCount)
+				.createdTime(LocalDateTime.now())
+				.build());
+		}
+		AuditStats auditStats = buildAuditStats();
+		if (auditStats.total() > 0 && auditStats.completenessRate() < AUDIT_COMPLETENESS_ALERT_THRESHOLD) {
+			alerts.add(CleaningAlertView.builder()
+				.level("WARN")
+				.code("AUDIT_COMPLETENESS_LOW")
+				.message(String.format(Locale.ROOT, "审计完整率偏低：%.2f%%", auditStats.completenessRate()))
 				.createdTime(LocalDateTime.now())
 				.build());
 		}
@@ -317,6 +380,45 @@ public class CleaningMetricsService {
 
 	private Long defaultLong(Long value) {
 		return value != null ? value : 0L;
+	}
+
+	private double percent(long numerator, long denominator) {
+		if (denominator <= 0) {
+			return 0D;
+		}
+		return numerator * 100.0D / denominator;
+	}
+
+	private RunTotals buildRunTotals() {
+		List<CleaningJobRun> runs = jobRunMapper.selectList(new LambdaQueryWrapper<>());
+		long totalScanned = 0L;
+		long totalFlagged = 0L;
+		long totalWritten = 0L;
+		long totalFailed = 0L;
+		for (CleaningJobRun run : runs) {
+			totalScanned += run.getTotalScanned() != null ? run.getTotalScanned() : 0L;
+			totalFlagged += run.getTotalFlagged() != null ? run.getTotalFlagged() : 0L;
+			totalWritten += run.getTotalWritten() != null ? run.getTotalWritten() : 0L;
+			totalFailed += run.getTotalFailed() != null ? run.getTotalFailed() : 0L;
+		}
+		return new RunTotals(totalScanned, totalFlagged, totalWritten, totalFailed);
+	}
+
+	private AuditStats buildAuditStats() {
+		long totalAuditRecords = defaultLong(recordMapper.selectCount(new LambdaQueryWrapper<>()));
+		long auditCompleteRecords = defaultLong(
+				recordMapper.selectCount(new LambdaQueryWrapper<CleaningRecord>().isNotNull(CleaningRecord::getTraceId)
+					.isNotNull(CleaningRecord::getPolicySnapshotJson)
+					.isNotNull(CleaningRecord::getVerdict)));
+		double auditCompletenessRate = totalAuditRecords > 0 ? (auditCompleteRecords * 100.0D) / totalAuditRecords
+				: 100D;
+		return new AuditStats(totalAuditRecords, auditCompleteRecords, auditCompletenessRate);
+	}
+
+	private record RunTotals(long totalScanned, long totalFlagged, long totalWritten, long totalFailed) {
+	}
+
+	private record AuditStats(long total, long complete, double completenessRate) {
 	}
 
 }

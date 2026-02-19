@@ -171,6 +171,17 @@
               <el-descriptions-item label="判定结果">
                 {{ formatVerdict(responseData.verdict) }}
               </el-descriptions-item>
+              <el-descriptions-item label="Trace ID">
+                <span class="mono-value">{{ responseData.traceId || '-' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="策略版本">
+                <template v-if="responseData.policyId">
+                  <span class="mono-value">
+                    #{{ responseData.policyId }} / v{{ responseData.policyVersionId || '-' }}
+                  </span>
+                </template>
+                <span v-else>-</span>
+              </el-descriptions-item>
               <el-descriptions-item label="风险类别">
                 <span v-if="!responseData.categories || responseData.categories.length === 0">
                   -
@@ -185,6 +196,14 @@
                     {{ formatCategory(category) }}
                   </el-tag>
                 </template>
+              </el-descriptions-item>
+              <el-descriptions-item label="Shadow 对照">
+                <template v-if="responseData.shadowCompared">
+                  <el-tag :type="shadowDiffTag(responseData.shadowDiffLevel)">
+                    {{ formatShadowDiffLevel(responseData.shadowDiffLevel) }}
+                  </el-tag>
+                </template>
+                <span v-else>未执行（采样未命中或未启用）</span>
               </el-descriptions-item>
               <el-descriptions-item label="脱敏文本">
                 <pre class="result-text">{{ responseData.sanitizedText || '-' }}</pre>
@@ -332,6 +351,24 @@
 
   const formatVerdict = code => buildOptionLabel(code, verdictOptions.value);
   const formatCategory = code => getOptionLabelZh(code, categoryOptions.value);
+  const formatShadowDiffLevel = level => {
+    const labels = {
+      NONE: '无差异',
+      LOW: '低差异',
+      HIGH: '高差异',
+    };
+    return labels[level] || level || '未知';
+  };
+
+  const shadowDiffTag = level => {
+    if (level === 'HIGH') {
+      return 'danger';
+    }
+    if (level === 'LOW') {
+      return 'warning';
+    }
+    return 'success';
+  };
 
   const applySampleText = value => {
     if (!value) {
@@ -528,6 +565,10 @@
     font-family: Menlo, Consolas, Monaco, monospace;
     font-size: 13px;
     line-height: 1.5;
+  }
+
+  .mono-value {
+    font-family: Menlo, Consolas, Monaco, monospace;
   }
 
   .response-error {

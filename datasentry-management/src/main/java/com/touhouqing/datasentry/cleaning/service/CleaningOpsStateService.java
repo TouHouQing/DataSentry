@@ -19,6 +19,10 @@ public class CleaningOpsStateService {
 
 	private final AtomicLong webhookPushFailureCount = new AtomicLong();
 
+	private final AtomicLong evidenceBundleExportSuccessCount = new AtomicLong();
+
+	private final AtomicLong evidenceBundleExportFailureCount = new AtomicLong();
+
 	private final AtomicLong onnxModelLoadSuccessCount = new AtomicLong();
 
 	private final AtomicLong onnxModelLoadFailureCount = new AtomicLong();
@@ -69,6 +73,14 @@ public class CleaningOpsStateService {
 
 	public void markWebhookPushFailure() {
 		webhookPushFailureCount.incrementAndGet();
+	}
+
+	public void markEvidenceBundleExportSuccess() {
+		evidenceBundleExportSuccessCount.incrementAndGet();
+	}
+
+	public void markEvidenceBundleExportFailure() {
+		evidenceBundleExportFailureCount.incrementAndGet();
 	}
 
 	public void setL2ProviderStatus(String status) {
@@ -133,6 +145,14 @@ public class CleaningOpsStateService {
 
 	public long getWebhookPushFailureCount() {
 		return webhookPushFailureCount.get();
+	}
+
+	public long getEvidenceBundleExportSuccessCount() {
+		return evidenceBundleExportSuccessCount.get();
+	}
+
+	public long getEvidenceBundleExportFailureCount() {
+		return evidenceBundleExportFailureCount.get();
 	}
 
 	public String getL2ProviderStatus() {

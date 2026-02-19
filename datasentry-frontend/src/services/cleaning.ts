@@ -410,9 +410,16 @@ export interface CleaningMetricsView {
   hardExceededRuns?: number;
   totalDlq?: number;
   readyDlq?: number;
+  totalScannedRecords?: number;
+  totalFlaggedRecords?: number;
+  totalWrittenRecords?: number;
+  totalFailedRecords?: number;
   totalCost?: number;
   onlineCost?: number;
   batchCost?: number;
+  avgCostPerRun?: number;
+  costPerTenThousandRecords?: number;
+  costPerFlaggedRecord?: number;
   lastPricingSyncTime?: string;
   pricingSyncFailureCount?: number;
   webhookPushSuccessCount?: number;
@@ -441,6 +448,15 @@ export interface CleaningMetricsView {
   totalRollbackConflicts?: number;
   rollbackSuccessRate?: number;
   rollbackConflictRate?: number;
+  totalReviewFeedbacks?: number;
+  reviewDisputedFeedbacks?: number;
+  reviewDisputeRate?: number;
+  totalAuditRecords?: number;
+  auditCompleteRecords?: number;
+  auditCompletenessRate?: number;
+  evidenceBundleExportSuccessCount?: number;
+  evidenceBundleExportFailureCount?: number;
+  evidenceBundleExportSuccessRate?: number;
   reviewOps?: CleaningReviewOpsView;
 }
 
@@ -538,6 +554,11 @@ export interface CleaningResponse {
   verdict?: string;
   categories?: string[];
   sanitizedText?: string;
+  traceId?: string;
+  policyId?: number;
+  policyVersionId?: number;
+  shadowCompared?: boolean;
+  shadowDiffLevel?: string;
 }
 
 export interface CleaningRollbackRun {

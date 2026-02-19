@@ -19,4 +19,14 @@ public class CleaningResponse {
 
 	private String sanitizedText;
 
+	private String traceId;
+
+	private Long policyId;
+
+	private Long policyVersionId;
+
+	private Boolean shadowCompared;
+
+	private String shadowDiffLevel;
+
 }
