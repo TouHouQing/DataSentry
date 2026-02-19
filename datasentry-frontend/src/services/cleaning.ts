@@ -38,6 +38,18 @@ export interface CleaningPolicyCopilotSuggestionView {
   generatedTime?: string;
 }
 
+export interface CleaningPolicyShadowSummaryView {
+  policyId: number;
+  policyVersionId?: number;
+  totalRecords?: number;
+  diffRecords?: number;
+  lowDiffRecords?: number;
+  mediumDiffRecords?: number;
+  highDiffRecords?: number;
+  diffRate?: number;
+  latestSampleTime?: string;
+}
+
 export interface CleaningPolicyVersion {
   id: number;
   policyId: number;
@@ -959,6 +971,17 @@ class CleaningService {
   ): Promise<CleaningPolicyCopilotSuggestionView | null> {
     const response = await axios.get<ApiResponse<CleaningPolicyCopilotSuggestionView>>(
       `${API_BASE_URL}/policies/${policyId}/copilot-suggestions`,
+      { params },
+    );
+    return response.data.data || null;
+  }
+
+  async getPolicyShadowSummary(
+    policyId: number,
+    params?: { versionId?: number; limit?: number },
+  ): Promise<CleaningPolicyShadowSummaryView | null> {
+    const response = await axios.get<ApiResponse<CleaningPolicyShadowSummaryView>>(
+      `${API_BASE_URL}/policies/${policyId}/shadow-summary`,
       { params },
     );
     return response.data.data || null;

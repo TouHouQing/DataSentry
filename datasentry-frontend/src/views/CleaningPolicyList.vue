@@ -312,6 +312,18 @@
         width="860px"
         :close-on-click-modal="false"
       >
+        <el-alert
+          v-if="policyShadowSummary"
+          type="info"
+          :closable="false"
+          show-icon
+          class="inline-alert"
+          :title="`Shadow 对比：总样本 ${policyShadowSummary.totalRecords || 0}，差异 ${
+            policyShadowSummary.diffRecords || 0
+          }（${Number(policyShadowSummary.diffRate || 0).toFixed(2)}%），高/中/低 = ${
+            policyShadowSummary.highDiffRecords || 0
+          }/${policyShadowSummary.mediumDiffRecords || 0}/${policyShadowSummary.lowDiffRecords || 0}`"
+        />
         <el-table
           :data="policyExperiments"
           style="width: 100%"
@@ -346,6 +358,12 @@
             @click="loadPolicyExperiments(selectedVersionPolicy?.id)"
           >
             刷新
+          </el-button>
+          <el-button
+            :loading="loadingPolicyShadowSummary"
+            @click="loadPolicyShadowSummary(selectedVersionPolicy?.id)"
+          >
+            刷新 Shadow 摘要
           </el-button>
         </template>
       </el-dialog>
@@ -878,6 +896,8 @@
   const experimentDialogVisible = ref(false);
   const policyExperiments = ref([]);
   const loadingPolicyExperiments = ref(false);
+  const policyShadowSummary = ref(null);
+  const loadingPolicyShadowSummary = ref(false);
   const copilotDialogVisible = ref(false);
   const copilotLoading = ref(false);
   const selectedCopilotPolicy = ref(null);
@@ -1387,10 +1407,29 @@
     }
   };
 
+  const loadPolicyShadowSummary = async policyId => {
+    if (!policyId) {
+      policyShadowSummary.value = null;
+      return;
+    }
+    loadingPolicyShadowSummary.value = true;
+    try {
+      policyShadowSummary.value = await cleaningService.getPolicyShadowSummary(policyId, {
+        limit: 1000,
+      });
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '加载 Shadow 摘要失败');
+      policyShadowSummary.value = null;
+    } finally {
+      loadingPolicyShadowSummary.value = false;
+    }
+  };
+
   const openExperimentDialog = async policy => {
     selectedVersionPolicy.value = policy;
     experimentDialogVisible.value = true;
-    await loadPolicyExperiments(policy?.id);
+    await Promise.all([loadPolicyExperiments(policy?.id), loadPolicyShadowSummary(policy?.id)]);
   };
 
   const openCopilotDialog = async policy => {

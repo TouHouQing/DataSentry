@@ -10,6 +10,7 @@ import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateCloneRequest
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyTemplateView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRuleUpdateRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyShadowSummaryView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyVersionView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningRuleRequest;
@@ -18,6 +19,7 @@ import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyCopilotService;
+import com.touhouqing.datasentry.cleaning.service.CleaningPolicyShadowService;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import jakarta.validation.Valid;
@@ -35,6 +37,8 @@ public class CleaningPolicyController {
 	private final CleaningPolicyService policyService;
 
 	private final CleaningPolicyCopilotService policyCopilotService;
+
+	private final CleaningPolicyShadowService policyShadowService;
 
 	private final CleaningPermissionGuard permissionGuard;
 
@@ -138,6 +142,14 @@ public class CleaningPolicyController {
 			@RequestParam(required = false) Long agentId, @RequestParam(required = false) Integer limit) {
 		return ResponseEntity
 			.ok(ApiResponse.success("success", policyCopilotService.suggest(policyId, jobRunId, agentId, limit)));
+	}
+
+	@GetMapping("/policies/{policyId}/shadow-summary")
+	public ResponseEntity<ApiResponse<CleaningPolicyShadowSummaryView>> summarizePolicyShadow(
+			@PathVariable Long policyId, @RequestParam(required = false) Long versionId,
+			@RequestParam(required = false) Integer limit) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", policyShadowService.summarize(policyId, versionId, limit)));
 	}
 
 	@GetMapping("/rules")
