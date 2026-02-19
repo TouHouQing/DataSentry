@@ -1,6 +1,7 @@
 package com.touhouqing.datasentry.cleaning.controller;
 
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyRequest;
+import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyCopilotSuggestionView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyExperimentView;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyOfflineRequest;
 import com.touhouqing.datasentry.cleaning.dto.CleaningPolicyPublishRequest;
@@ -16,6 +17,7 @@ import com.touhouqing.datasentry.cleaning.enums.CleaningPermissionCode;
 import com.touhouqing.datasentry.cleaning.security.CleaningPermissionGuard;
 import com.touhouqing.datasentry.cleaning.model.CleaningPolicy;
 import com.touhouqing.datasentry.cleaning.model.CleaningRule;
+import com.touhouqing.datasentry.cleaning.service.CleaningPolicyCopilotService;
 import com.touhouqing.datasentry.cleaning.service.CleaningPolicyService;
 import com.touhouqing.datasentry.vo.ApiResponse;
 import jakarta.validation.Valid;
@@ -31,6 +33,8 @@ import java.util.List;
 public class CleaningPolicyController {
 
 	private final CleaningPolicyService policyService;
+
+	private final CleaningPolicyCopilotService policyCopilotService;
 
 	private final CleaningPermissionGuard permissionGuard;
 
@@ -126,6 +130,14 @@ public class CleaningPolicyController {
 	public ResponseEntity<ApiResponse<List<CleaningPolicyExperimentView>>> listPolicyExperiments(
 			@PathVariable Long policyId, @RequestParam(required = false) Integer limit) {
 		return ResponseEntity.ok(ApiResponse.success("success", policyService.listPolicyExperiments(policyId, limit)));
+	}
+
+	@GetMapping("/policies/{policyId}/copilot-suggestions")
+	public ResponseEntity<ApiResponse<CleaningPolicyCopilotSuggestionView>> suggestPolicyByCopilot(
+			@PathVariable Long policyId, @RequestParam(required = false) Long jobRunId,
+			@RequestParam(required = false) Long agentId, @RequestParam(required = false) Integer limit) {
+		return ResponseEntity
+			.ok(ApiResponse.success("success", policyCopilotService.suggest(policyId, jobRunId, agentId, limit)));
 	}
 
 	@GetMapping("/rules")

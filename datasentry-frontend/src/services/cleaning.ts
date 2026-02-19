@@ -25,6 +25,19 @@ export interface CleaningPolicyOfflineRequest {
   operator?: string;
 }
 
+export interface CleaningPolicyCopilotSuggestionView {
+  policyId: number;
+  policyName?: string;
+  sampleSize?: number;
+  disputeRate?: number;
+  recommendationLevel?: string;
+  recommendedDefaultAction?: string;
+  recommendedConfig?: Record<string, unknown>;
+  recommendedRuleIds?: number[];
+  insights?: string[];
+  generatedTime?: string;
+}
+
 export interface CleaningPolicyVersion {
   id: number;
   policyId: number;
@@ -938,6 +951,17 @@ class CleaningService {
       `${API_BASE_URL}/policies/${policyId}/offline`,
       payload || {},
     );
+  }
+
+  async getPolicyCopilotSuggestion(
+    policyId: number,
+    params?: { jobRunId?: number; agentId?: number; limit?: number },
+  ): Promise<CleaningPolicyCopilotSuggestionView | null> {
+    const response = await axios.get<ApiResponse<CleaningPolicyCopilotSuggestionView>>(
+      `${API_BASE_URL}/policies/${policyId}/copilot-suggestions`,
+      { params },
+    );
+    return response.data.data || null;
   }
 
   async listPolicyExperiments(

@@ -52,7 +52,7 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="520" fixed="right">
+                <el-table-column label="操作" width="600" fixed="right">
                   <template #default="scope">
                     <el-button
                       size="small"
@@ -83,6 +83,9 @@
                     </el-button>
                     <el-button size="small" @click="openExperimentDialog(scope.row)">
                       实验
+                    </el-button>
+                    <el-button size="small" type="info" @click="openCopilotDialog(scope.row)">
+                      AI建议
                     </el-button>
                     <el-button size="small" type="primary" @click="openPolicyDialog(scope.row)">
                       编辑
@@ -464,6 +467,60 @@
       </el-dialog>
 
       <el-dialog
+        v-model="copilotDialogVisible"
+        :title="`AI 策略建议${selectedCopilotPolicy ? ` - ${selectedCopilotPolicy.name}` : ''}`"
+        width="760px"
+        :close-on-click-modal="false"
+      >
+        <div v-loading="copilotLoading">
+          <el-empty v-if="!copilotSuggestion" description="暂无建议，请先积累审核反馈样本后再试" />
+          <template v-else>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="样本量">
+                {{ copilotSuggestion.sampleSize || 0 }}
+              </el-descriptions-item>
+              <el-descriptions-item label="争议率">
+                {{ `${(Number(copilotSuggestion.disputeRate || 0) * 100).toFixed(2)}%` }}
+              </el-descriptions-item>
+              <el-descriptions-item label="建议档位">
+                {{ copilotSuggestion.recommendationLevel || '-' }}
+              </el-descriptions-item>
+              <el-descriptions-item label="建议默认动作">
+                {{ formatDefaultAction(copilotSuggestion.recommendedDefaultAction) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="建议规则数">
+                {{ copilotSuggestion.recommendedRuleIds?.length || 0 }}
+              </el-descriptions-item>
+              <el-descriptions-item label="生成时间">
+                {{ formatDateTime(copilotSuggestion.generatedTime) }}
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <el-divider>建议说明</el-divider>
+            <el-alert
+              v-for="insight in copilotSuggestion.insights || []"
+              :key="insight"
+              type="info"
+              :closable="false"
+              show-icon
+              class="inline-alert"
+              :title="insight"
+            />
+          </template>
+        </div>
+        <template #footer>
+          <el-button @click="copilotDialogVisible = false">关闭</el-button>
+          <el-button
+            type="primary"
+            :disabled="!copilotSuggestion || !selectedCopilotPolicy"
+            @click="applyCopilotSuggestion"
+          >
+            应用建议到草稿
+          </el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog
         v-model="templateDialogVisible"
         :title="templateDialogTitle"
         width="900px"
@@ -821,6 +878,10 @@
   const experimentDialogVisible = ref(false);
   const policyExperiments = ref([]);
   const loadingPolicyExperiments = ref(false);
+  const copilotDialogVisible = ref(false);
+  const copilotLoading = ref(false);
+  const selectedCopilotPolicy = ref(null);
+  const copilotSuggestion = ref(null);
   const policyTemplates = ref([]);
   const loadingPolicyTemplates = ref(false);
   const templateDialogVisible = ref(false);
@@ -1330,6 +1391,73 @@
     selectedVersionPolicy.value = policy;
     experimentDialogVisible.value = true;
     await loadPolicyExperiments(policy?.id);
+  };
+
+  const openCopilotDialog = async policy => {
+    if (!policy?.id) {
+      return;
+    }
+    selectedCopilotPolicy.value = policy;
+    copilotSuggestion.value = null;
+    copilotDialogVisible.value = true;
+    copilotLoading.value = true;
+    try {
+      copilotSuggestion.value = await cleaningService.getPolicyCopilotSuggestion(policy.id, {
+        limit: 300,
+      });
+    } catch (error) {
+      const message = normalizeApiError(error);
+      ElMessage.error(message || '加载 AI 建议失败');
+      copilotSuggestion.value = null;
+    } finally {
+      copilotLoading.value = false;
+    }
+  };
+
+  const applyCopilotSuggestion = () => {
+    const suggestion = copilotSuggestion.value;
+    const policy = selectedCopilotPolicy.value;
+    if (!suggestion || !policy) {
+      return;
+    }
+    openPolicyDialog(policy);
+    if (suggestion.recommendedDefaultAction) {
+      policyForm.defaultAction = suggestion.recommendedDefaultAction;
+    }
+    const recommendedConfig = suggestion.recommendedConfig || {};
+    if (Number.isFinite(Number(recommendedConfig.blockThreshold))) {
+      policyForm.blockThreshold = Number(recommendedConfig.blockThreshold);
+    }
+    if (Number.isFinite(Number(recommendedConfig.reviewThreshold))) {
+      policyForm.reviewThreshold = Number(recommendedConfig.reviewThreshold);
+    }
+    if (Number.isFinite(Number(recommendedConfig.l2Threshold))) {
+      policyForm.l2Threshold = Number(recommendedConfig.l2Threshold);
+    }
+    if (typeof recommendedConfig.llmEnabled === 'boolean') {
+      policyForm.llmEnabled = recommendedConfig.llmEnabled;
+    }
+    if (typeof recommendedConfig.shadowEnabled === 'boolean') {
+      policyForm.shadowEnabled = recommendedConfig.shadowEnabled;
+    }
+    if (Number.isFinite(Number(recommendedConfig.shadowSampleRatio))) {
+      policyForm.shadowSampleRatio = Number(recommendedConfig.shadowSampleRatio);
+    }
+    const recommendedRuleIds = new Set(suggestion.recommendedRuleIds || []);
+    if (recommendedRuleIds.size > 0) {
+      ruleSelections.value = ruleSelections.value.map(item => {
+        if (recommendedRuleIds.has(item.ruleId)) {
+          return {
+            ...item,
+            selected: true,
+            priority: item.priority > 0 ? item.priority : 50,
+          };
+        }
+        return item;
+      });
+    }
+    copilotDialogVisible.value = false;
+    ElMessage.success('已应用 AI 建议，请确认后保存策略');
   };
 
   const publishPolicyVersion = async policy => {
